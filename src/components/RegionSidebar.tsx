@@ -181,7 +181,7 @@ export default function RegionSidebar() {
         {profile && (
           <div className="px-2 mb-3">
             <p className="text-white text-xs font-semibold truncate">
-              {profile.prenom} {profile.nom}
+              {profile.prenom} <span className="uppercase">{profile.nom}</span>
             </p>
             <p className="text-white/40 text-xs truncate">{profile.email}</p>
           </div>

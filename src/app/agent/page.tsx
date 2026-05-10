@@ -141,10 +141,15 @@ function AgentPageContent() {
     setStatutSaving(false);
   }
 
-  // ── Rapports de la brigade ───────────────────────────────────────────────
-  type Rapport = { id: string; date: string; resume: Record<string, unknown> };
+  // ── Rapports de la brigade (CRUD) ───────────────────────────────────────
+  type Rapport = { id: string; date: string; titre: string; contenu: string | null; created_by: string | null };
   const [rapports, setRapports] = useState<Rapport[]>([]);
   const [rapportsLoading, setRapportsLoading] = useState(true);
+  const [showRapportForm, setShowRapportForm] = useState(false);
+  const [editingRapportId, setEditingRapportId] = useState<string | null>(null);
+  const [rapportForm, setRapportForm] = useState({ date: "", titre: "", contenu: "" });
+  const [rapportSaving, setRapportSaving] = useState(false);
+  const [confirmDeleteRapportId, setConfirmDeleteRapportId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile?.brigadeId) { setRapportsLoading(false); return; }
@@ -152,16 +157,58 @@ function AgentPageContent() {
       try {
         const { data } = await supabase
           .from("rapports")
-          .select("id, date, resume")
+          .select("id, date, titre, contenu, created_by")
           .eq("brigade_id", profile.brigadeId)
           .order("date", { ascending: false })
-          .limit(30);
+          .limit(50);
         setRapports((data ?? []) as Rapport[]);
       } finally {
         setRapportsLoading(false);
       }
     })();
   }, [profile?.brigadeId]);
+
+  function openNewRapport() {
+    setRapportForm({ date: new Date().toISOString().split("T")[0], titre: "", contenu: "" });
+    setEditingRapportId(null);
+    setShowRapportForm(true);
+  }
+
+  function openEditRapport(r: Rapport) {
+    setRapportForm({ date: r.date, titre: r.titre, contenu: r.contenu ?? "" });
+    setEditingRapportId(r.id);
+    setShowRapportForm(true);
+  }
+
+  async function handleSaveRapport() {
+    if (!rapportForm.titre.trim() || !profile?.brigadeId) return;
+    setRapportSaving(true);
+    const payload = {
+      date: rapportForm.date,
+      titre: rapportForm.titre.trim(),
+      contenu: rapportForm.contenu.trim() || null,
+    };
+    if (editingRapportId) {
+      await supabase.from("rapports").update(payload).eq("id", editingRapportId);
+      setRapports((prev) => prev.map((r) => r.id === editingRapportId ? { ...r, ...payload } : r));
+    } else {
+      const { data: newRow } = await supabase
+        .from("rapports")
+        .insert({ ...payload, brigade_id: profile.brigadeId, created_by: user?.id ?? null })
+        .select()
+        .single();
+      if (newRow) setRapports((prev) => [{ ...newRow as Rapport }, ...prev]);
+    }
+    setShowRapportForm(false);
+    setEditingRapportId(null);
+    setRapportSaving(false);
+  }
+
+  async function handleDeleteRapport(id: string) {
+    await supabase.from("rapports").delete().eq("id", id);
+    setRapports((prev) => prev.filter((r) => r.id !== id));
+    setConfirmDeleteRapportId(null);
+  }
 
   // ── Personnel de la brigade ──────────────────────────────────────────────
   const [brigadeAgents, setBrigadeAgents] = useState<BrigadeAgent[]>([]);
@@ -639,12 +686,68 @@ function AgentPageContent() {
           ══════════════════════════════════════════════════════════════ */}
           {activeTab === "rapports" && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="font-bold text-gray-800">Rapports de la brigade</h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {brigadeName || "Ma brigade"} · consultation uniquement
-                </p>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                <div>
+                  <h2 className="font-bold text-gray-800">Rapports de la brigade</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {brigadeName || "Ma brigade"} · {rapports.length} rapport{rapports.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <button onClick={openNewRapport}
+                  className="flex items-center gap-1.5 bg-[#4A5C2F] hover:bg-[#3b4a25] text-white
+                    font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Nouveau rapport
+                </button>
               </div>
+
+              {/* Formulaire création / édition */}
+              {showRapportForm && (
+                <div className="px-6 py-5 border-b border-gray-100 bg-gray-50">
+                  <h3 className="font-semibold text-gray-700 mb-4 text-sm">
+                    {editingRapportId ? "Modifier le rapport" : "Nouveau rapport"}
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelCls}>Date</label>
+                        <input type="date" value={rapportForm.date}
+                          onChange={(e) => setRapportForm((p) => ({ ...p, date: e.target.value }))}
+                          className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Titre *</label>
+                        <input value={rapportForm.titre}
+                          onChange={(e) => setRapportForm((p) => ({ ...p, titre: e.target.value }))}
+                          placeholder="Ex : Rapport d'activité journalier" className={inputCls} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Contenu / Observations</label>
+                      <textarea value={rapportForm.contenu}
+                        onChange={(e) => setRapportForm((p) => ({ ...p, contenu: e.target.value }))}
+                        placeholder="Décrivez les activités, incidents ou observations du jour…"
+                        rows={4} className={inputCls + " resize-none"} />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 mt-4">
+                    <button onClick={() => { setShowRapportForm(false); setEditingRapportId(null); }}
+                      className="px-4 py-2 text-sm text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors">
+                      Annuler
+                    </button>
+                    <button onClick={handleSaveRapport}
+                      disabled={rapportSaving || !rapportForm.titre.trim()}
+                      className="px-5 py-2 text-sm font-semibold text-white bg-[#4A5C2F] hover:bg-[#3b4a25]
+                        rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                      {rapportSaving ? "Enregistrement…" : editingRapportId ? "Mettre à jour" : "Enregistrer"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {rapportsLoading ? (
                 <div className="flex justify-center py-10">
                   <div className="w-6 h-6 border-2 border-[#4A5C2F] border-t-transparent rounded-full animate-spin" />
@@ -661,21 +764,21 @@ function AgentPageContent() {
                       d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   <p className="text-sm">Aucun rapport disponible</p>
-                  <p className="text-xs mt-1">Les rapports apparaîtront ici dès leur création</p>
+                  <p className="text-xs mt-1">Cliquez sur « Nouveau rapport » pour commencer</p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-50">
                   {rapports.map((r) => {
+                    const isOwner = !r.created_by || r.created_by === user?.id;
                     const dateStr = r.date
                       ? new Date(r.date + "T12:00:00").toLocaleDateString("fr-SN", {
                           weekday: "long", day: "numeric", month: "long", year: "numeric"
                         })
                       : "—";
-                    const resume = r.resume as Record<string, unknown> | null;
                     return (
                       <div key={r.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-[#4A5C2F]/10 flex items-center justify-center shrink-0">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-[#4A5C2F]/10 flex items-center justify-center shrink-0 mt-0.5">
                             <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-[#4A5C2F]" fill="none"
                               viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round"
@@ -683,32 +786,55 @@ function AgentPageContent() {
                             </svg>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-800 text-sm capitalize">{dateStr}</p>
-                            {resume && typeof resume === "object" && (
-                              <div className="flex flex-wrap gap-3 mt-1.5">
-                                {typeof resume.presents === "number" && (
-                                  <span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
-                                    {resume.presents} présent{(resume.presents as number) > 1 ? "s" : ""}
-                                  </span>
-                                )}
-                                {typeof resume.saisies === "number" && (
-                                  <span className="text-xs text-[#4A5C2F] bg-[#4A5C2F]/8 px-2 py-0.5 rounded-full">
-                                    {resume.saisies} saisie{(resume.saisies as number) > 1 ? "s" : ""}
-                                  </span>
-                                )}
-                                {typeof resume.valeurTotale === "number" && (resume.valeurTotale as number) > 0 && (
-                                  <span className="text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                                    {Number(resume.valeurTotale).toLocaleString("fr-SN")} FCFA
-                                  </span>
-                                )}
-                              </div>
+                            <p className="font-semibold text-gray-800 text-sm">{r.titre}</p>
+                            <p className="text-xs text-gray-400 mt-0.5 capitalize">{dateStr}</p>
+                            {r.contenu && (
+                              <p className="text-xs text-gray-500 mt-1.5 line-clamp-2">{r.contenu}</p>
+                            )}
+                            {isOwner && (
+                              <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium bg-[#4A5C2F]/10 text-[#4A5C2F]">
+                                Mon rapport
+                              </span>
                             )}
                           </div>
-                          <span className="text-xs text-gray-300 shrink-0">Lecture seule</span>
+                          {isOwner && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button onClick={() => openEditRapport(r)} title="Modifier"
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg
+                                  text-gray-400 hover:text-[#4A5C2F] hover:bg-[#4A5C2F]/10 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                                  viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round"
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button onClick={() => setConfirmDeleteRapportId(r.id)} title="Supprimer"
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg
+                                  text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                                  viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
                   })}
+                </div>
+              )}
+              {!rapportsLoading && rapports.some((r) => r.created_by !== user?.id) && (
+                <div className="px-6 py-3 bg-gray-50 border-t border-gray-100">
+                  <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none"
+                      viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round"
+                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    Vous pouvez uniquement modifier et supprimer vos propres rapports (marqués « Mon rapport »)
+                  </p>
                 </div>
               )}
             </div>
@@ -926,7 +1052,39 @@ function AgentPageContent() {
         </div>
       </main>
 
-      {/* Dialog suppression */}
+      {/* Dialog suppression rapport */}
+      {confirmDeleteRapportId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setConfirmDeleteRapportId(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-red-600" fill="none"
+                  viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-bold text-gray-800">Supprimer ce rapport ?</p>
+                <p className="text-xs text-gray-500 mt-0.5">Cette action est irréversible.</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirmDeleteRapportId(null)}
+                className="px-5 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+                Annuler
+              </button>
+              <button onClick={() => handleDeleteRapport(confirmDeleteRapportId)}
+                className="px-5 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dialog suppression saisie */}
       {confirmDeleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setConfirmDeleteId(null)} />

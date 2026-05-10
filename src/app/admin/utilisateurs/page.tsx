@@ -8,6 +8,7 @@ import {
   DIRECTIONS_REGIONALES,
   BRIGADES, SUBDIVISIONS,
 } from "@/lib/roles";
+import { useUserProfile } from "@/lib/useUserProfile";
 import BrigadeSearch from "@/components/BrigadeSearch";
 
 interface FsBrigade { id: string; nom: string; subdivisionId?: string; directionRegionaleId?: string; }
@@ -44,6 +45,7 @@ const inputCls = "w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm f
 const labelCls = "block text-xs font-semibold text-gray-700 mb-1.5";
 
 export default function AdminUtilisateursPage() {
+  const { profile: myProfile } = useUserProfile();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   // Initialise avec les données statiques pour garantir des listes non-vides dès le premier rendu.
@@ -71,6 +73,11 @@ export default function AdminUtilisateursPage() {
   const [editError, setEditError] = useState("");
 
   const [search, setSearch] = useState("");
+
+  // Delete modal
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<UserProfile | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -296,6 +303,30 @@ export default function AdminUtilisateursPage() {
     );
   }
 
+  // ── Supprimer utilisateur ─────────────────────────────────────────────────────
+  async function handleDeleteUser(user: UserProfile) {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch("/api/admin/delete-user", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: user.uid }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setDeleteError(json.error ?? "Erreur lors de la suppression.");
+        return;
+      }
+      setUsers((prev) => prev.filter((u) => u.uid !== user.uid));
+      setConfirmDeleteUser(null);
+    } catch {
+      setDeleteError("Erreur inattendue. Vérifiez votre connexion.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // ── Derived ──────────────────────────────────────────────────────────────────
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
@@ -499,7 +530,7 @@ export default function AdminUtilisateursPage() {
                 {filtered.map((user) => (
                   <tr key={user.uid} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
-                      <p className="font-semibold text-gray-800">{user.prenom} {user.nom}</p>
+                      <p className="font-semibold text-gray-800">{user.prenom} <span className="uppercase">{user.nom}</span></p>
                       <p className="text-xs text-gray-400 mt-0.5">{user.email}</p>
                       {user.matricule && (
                         <p className="text-xs font-mono text-gray-400 mt-0.5">{user.matricule}</p>
@@ -543,7 +574,7 @@ export default function AdminUtilisateursPage() {
                           title={user.actif ? "Désactiver" : "Activer"}
                           className={`p-1.5 rounded-lg transition-colors ${
                             user.actif
-                              ? "text-red-400 hover:text-red-600 hover:bg-red-50"
+                              ? "text-orange-400 hover:text-orange-600 hover:bg-orange-50"
                               : "text-green-500 hover:text-green-700 hover:bg-green-50"
                           }`}
                         >
@@ -560,6 +591,20 @@ export default function AdminUtilisateursPage() {
                             </svg>
                           )}
                         </button>
+                        {/* Supprimer — interdit sur son propre compte */}
+                        {user.uid !== myProfile?.uid && (
+                          <button
+                            onClick={() => { setConfirmDeleteUser(user); setDeleteError(""); }}
+                            title="Supprimer"
+                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                              viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -704,7 +749,7 @@ export default function AdminUtilisateursPage() {
             <div className="bg-[#4A5C2F] px-6 py-5 flex items-center justify-between shrink-0">
               <div>
                 <h2 className="text-white font-bold text-base">Modifier l&apos;utilisateur</h2>
-                <p className="text-[#C9A84C] text-xs mt-0.5">{editingUser.prenom} {editingUser.nom}</p>
+                <p className="text-[#C9A84C] text-xs mt-0.5">{editingUser.prenom} <span className="uppercase">{editingUser.nom}</span></p>
               </div>
               <button onClick={() => setEditingUser(null)}
                 className="text-white/60 hover:text-white p-1.5 rounded-lg hover:bg-white/10">
@@ -795,6 +840,54 @@ export default function AdminUtilisateursPage() {
                     Mise à jour…
                   </>
                 ) : "Enregistrer les modifications"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Supprimer ──────────────────────────────────────────────────────── */}
+      {confirmDeleteUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setConfirmDeleteUser(null); setDeleteError(""); }} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-red-600" fill="none"
+                  viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-bold text-gray-800">Supprimer cet utilisateur ?</p>
+                <p className="text-sm text-gray-600 mt-0.5">
+                  {confirmDeleteUser.prenom} <span className="uppercase">{confirmDeleteUser.nom}</span>
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2.5 mb-4">
+              Cette action est <strong>irréversible</strong>. Le compte sera supprimé de l&apos;authentification et de la base de données.
+            </p>
+            {deleteError && (
+              <p className="text-xs text-red-500 mb-3">{deleteError}</p>
+            )}
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setConfirmDeleteUser(null); setDeleteError(""); }}
+                className="px-5 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+                Annuler
+              </button>
+              <button onClick={() => handleDeleteUser(confirmDeleteUser)} disabled={deleting}
+                className="px-5 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-60 flex items-center gap-2">
+                {deleting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    Suppression…
+                  </>
+                ) : "Supprimer définitivement"}
               </button>
             </div>
           </div>

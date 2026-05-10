@@ -109,7 +109,10 @@ export default function PersonnelPage() {
     if (!user) return;
     setLoadingMontages(true);
     try {
-      const { data: rows } = await supabase.from("montages").select("*");
+      let q = supabase.from("montages").select("*");
+      // Filtrer par brigade quand disponible (améliore perf + compatibilité RLS)
+      if (profile?.brigadeId) q = q.eq("brigade_id", profile.brigadeId);
+      const { data: rows } = await q;
       const data = (rows ?? []).map((r) => ({
         ...r,
         saisiPar: r.saisi_par ?? r.saisiPar ?? "",
@@ -118,7 +121,7 @@ export default function PersonnelPage() {
       setAllMontages(data);
       const todayDoc = data.find((m) => m.date === today);
       if (todayDoc) {
-        setTodayStatuts(todayDoc.statuts);
+        setTodayStatuts(todayDoc.statuts ?? {});
         setMontageDate(todayDoc.date);
       }
     } catch (err) {
@@ -126,7 +129,7 @@ export default function PersonnelPage() {
     } finally {
       setLoadingMontages(false);
     }
-  }, [user, today]);
+  }, [user, profile, today]);
 
   useEffect(() => { fetchMontages(); }, [fetchMontages]);
 
@@ -283,18 +286,13 @@ export default function PersonnelPage() {
     }
   }
 
-  // ── Calculs ── (uniquement sur les agents réellement saisis)
-  const agentMatricules = new Set(agents.map((a) => a.matricule));
-  const statutsAgentsReels = Object.fromEntries(
-    Object.entries(todayStatuts).filter(([matricule]) => agentMatricules.has(matricule))
-  );
-
+  // ── Calculs ── directs depuis todayStatuts (indépendant du chargement des agents)
   const todayCounts = {
-    presents:         Object.values(statutsAgentsReels).filter((s) => s === "Présent").length,
-    patrouilles:      Object.values(statutsAgentsReels).filter((s) => s === "En patrouille").length,
-    barrages:         Object.values(statutsAgentsReels).filter((s) => s === "Barrage sur route").length,
-    permissionnaires: Object.values(statutsAgentsReels).filter((s) => s === "Permissionnaire").length,
-    repos:            Object.values(statutsAgentsReels).filter((s) => s === "Repos").length,
+    presents:         Object.values(todayStatuts).filter((s) => s === "Présent").length,
+    patrouilles:      Object.values(todayStatuts).filter((s) => s === "En patrouille").length,
+    barrages:         Object.values(todayStatuts).filter((s) => s === "Barrage sur route").length,
+    permissionnaires: Object.values(todayStatuts).filter((s) => s === "Permissionnaire").length,
+    repos:            Object.values(todayStatuts).filter((s) => s === "Repos").length,
   };
 
   const lastMontage = allMontages.find((m) => m.date < today) ?? null;
@@ -335,7 +333,7 @@ export default function PersonnelPage() {
     </svg>`;
 
     const rows = agents.map((agent) => {
-      const statut = statutsAgentsReels[agent.matricule] as Statut | undefined;
+      const statut = todayStatuts[agent.matricule] as Statut | undefined;
       return `<tr>
         <td class="mono">${agent.matricule}</td>
         <td><strong>${agent.nom}</strong> ${agent.prenom}</td>
