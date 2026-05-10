@@ -71,12 +71,19 @@ export function useUserProfile() {
       setProfile(mapped);
       document.cookie = `role=${mapped.role}; path=/; max-age=3600; SameSite=Strict`;
     } else {
-      // Profil absent — fallback
+      // Table inaccessible (RLS) — lire le rôle depuis les métadonnées Auth
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const metaRole = ((authUser?.user_metadata?.role as string) ?? "CHEF_BRIGADE").toUpperCase();
       const fallback: UserProfile = {
-        uid, email: "", nom: "", prenom: "", role: "CHEF_BRIGADE", actif: true,
+        uid,
+        email:   authUser?.email   ?? "",
+        nom:     (authUser?.user_metadata?.nom    as string) ?? "",
+        prenom:  (authUser?.user_metadata?.prenom as string) ?? "",
+        role:    metaRole as UserProfile["role"],
+        actif:   true,
       };
       setProfile(fallback);
-      document.cookie = `role=CHEF_BRIGADE; path=/; max-age=3600; SameSite=Strict`;
+      document.cookie = `role=${metaRole}; path=/; max-age=3600; SameSite=Strict`;
     }
     setLoading(false);
   }
