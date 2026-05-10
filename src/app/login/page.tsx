@@ -45,7 +45,10 @@ export default function LoginPage() {
         .eq("id", data.user.id)
         .single();
 
-      const role = profileData?.role?.toUpperCase() ?? "";
+      // Fallback sur les métadonnées Auth si la table users est inaccessible (RLS)
+      const role = profileData?.role?.toUpperCase()
+        ?? (data.user.user_metadata?.role as string | undefined)?.toUpperCase()
+        ?? "";
 
       if (profileData?.actif === false && role !== "ADMIN") {
         await supabase.auth.signOut();

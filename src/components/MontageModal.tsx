@@ -25,8 +25,8 @@ export interface MontageRecord {
   statut: StatutMontage;
 }
 
-type NewAgentState = { matricule: string; nom: string; prenom: string; grade: string };
-const EMPTY_AGENT: NewAgentState = { matricule: "", nom: "", prenom: "", grade: GRADES[0] };
+type NewAgentState = { matricule: string; nom: string; prenom: string; grade: string; statut: Statut };
+const EMPTY_AGENT: NewAgentState = { matricule: "", nom: "", prenom: "", grade: GRADES[0], statut: "Présent" };
 
 interface Props {
   userEmail: string;
@@ -95,7 +95,7 @@ export default function MontageModal({ userEmail, brigadeId, agents, onAgentAdde
       if (dbError) throw dbError;
       const saved: AgentDynamic = { ...agentData, id: data.id };
       onAgentAdded(saved);
-      setStatuts((prev) => ({ ...prev, [saved.matricule]: "Présent" }));
+      setStatuts((prev) => ({ ...prev, [saved.matricule]: newAgent.statut }));
       setNewAgent(EMPTY_AGENT);
       setAddingAgent(false);
     } catch {
@@ -126,7 +126,7 @@ export default function MontageModal({ userEmail, brigadeId, agents, onAgentAdde
 
   function openEditAgent(agent: AgentDynamic) {
     setEditingAgent(agent);
-    setEditAgentForm({ matricule: agent.matricule, nom: agent.nom, prenom: agent.prenom, grade: agent.grade });
+    setEditAgentForm({ matricule: agent.matricule, nom: agent.nom, prenom: agent.prenom, grade: agent.grade, statut: "Présent" });
     setEditingError("");
   }
 
@@ -436,6 +436,22 @@ export default function MontageModal({ userEmail, brigadeId, agents, onAgentAdde
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg
                       focus:outline-none focus:ring-2 focus:ring-[#4A5C2F] bg-white"
                   />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-gray-500 mb-1 block">Statut du jour *</label>
+                  <div className="flex flex-wrap gap-2">
+                    {STATUTS.map((s) => (
+                      <button
+                        key={s} type="button"
+                        onClick={() => setNewAgent((p) => ({ ...p, statut: s }))}
+                        className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-all
+                          ${newAgent.statut === s
+                            ? STATUT_STYLES[s] + " scale-105 shadow-sm"
+                            : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"}`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               {addingError && <p className="text-red-500 text-xs mb-2">{addingError}</p>}
