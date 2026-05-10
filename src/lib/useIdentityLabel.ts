@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { gradeAbbrev } from "@/lib/agents";
 
 /**
  * Retourne l'identité complète de l'utilisateur connecté formatée selon son rôle :
@@ -27,8 +28,7 @@ export function useIdentityLabel(): { label: string; loading: boolean } {
       const nom = p.nom ?? "";
 
       if (role === "AGENT") {
-        const grade = p.grade ?? "";
-        setLabel(`${grade} ${nom}`.trim() || fullName);
+        setLabel(`${gradeAbbrev(p.grade)} ${nom}`.trim() || fullName);
         return;
       }
 

@@ -53,6 +53,21 @@ export const STATUT_STYLES: Record<Statut, string> = {
   "Exécution conforme à l'ordre de service":  "bg-purple-100 text-purple-700 border-purple-200",
 };
 
+/** Abréviations des grades pour l'affichage compact (en-tête, sidebar) */
+export const GRADE_ABBREV: Record<string, string> = {
+  "Préposé des Douanes":      "Psé",
+  "Adjoint des Douanes":      "A/C",
+  "Agent de Constatation":    "AC",
+  "Contrôleur des Douanes":   "Ctr",
+  "Inspecteur des Douanes":   "Insp",
+};
+
+/** Retourne l'abréviation d'un grade, ou le grade complet si inconnu */
+export function gradeAbbrev(grade: string | undefined | null): string {
+  if (!grade) return "";
+  return GRADE_ABBREV[grade] ?? grade;
+}
+
 export const STATUT_DOT: Record<Statut, string> = {
   "Présent":                                  "bg-green-500",
   "En patrouille":                            "bg-[#4A5C2F]",

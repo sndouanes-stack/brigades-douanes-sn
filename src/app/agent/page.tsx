@@ -6,7 +6,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/lib/useUserProfile";
-import { STATUTS, STATUT_STYLES, type Statut } from "@/lib/agents";
+import { STATUTS, STATUT_STYLES, gradeAbbrev, type Statut } from "@/lib/agents";
 import { BRIGADES } from "@/lib/roles";
 import Sidebar from "@/components/Sidebar";
 
@@ -86,9 +86,9 @@ function AgentPageContent() {
   const searchParams = useSearchParams();
   const { user, profile, loading } = useUserProfile();
 
-  // Tab actif : dashboard (défaut), statut, personnel, saisies
+  // Tab actif : dashboard (défaut), statut, personnel, rapports, saisies
   const rawTab = searchParams.get("tab");
-  const activeTab = (rawTab === "statut" || rawTab === "personnel" || rawTab === "saisies")
+  const activeTab = (rawTab === "statut" || rawTab === "personnel" || rawTab === "rapports" || rawTab === "saisies")
     ? rawTab
     : "dashboard";
 
@@ -107,14 +107,17 @@ function AgentPageContent() {
   // ── Statut du montage ────────────────────────────────────────────────────
   const [statut, setStatut] = useState<Statut | null>(null);
   const [statutLoading, setStatutLoading] = useState(true);
+  const [statutSaving, setStatutSaving] = useState(false);
+  const [montageId, setMontageId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile?.matricule) { setStatutLoading(false); return; }
     async function fetchStatut() {
-      let q = supabase.from("montages").select("statuts").eq("date", today);
+      let q = supabase.from("montages").select("id, statuts").eq("date", today);
       if (profile?.brigadeId) q = q.eq("brigade_id", profile.brigadeId);
       const { data } = await q.limit(1);
       if (data && data.length > 0 && profile?.matricule) {
+        setMontageId(data[0].id ?? null);
         const s = data[0].statuts?.[profile.matricule] as Statut | undefined;
         if (s) setStatut(s);
       }
@@ -122,6 +125,43 @@ function AgentPageContent() {
     }
     fetchStatut();
   }, [profile, today]);
+
+  async function handleUpdateStatut(newStatut: Statut) {
+    if (!profile?.matricule || !montageId) return;
+    setStatutSaving(true);
+    // Lire les statuts actuels puis patcher
+    const { data: current } = await supabase
+      .from("montages")
+      .select("statuts")
+      .eq("id", montageId)
+      .single();
+    const merged = { ...(current?.statuts ?? {}), [profile.matricule]: newStatut };
+    await supabase.from("montages").update({ statuts: merged }).eq("id", montageId);
+    setStatut(newStatut);
+    setStatutSaving(false);
+  }
+
+  // ── Rapports de la brigade ───────────────────────────────────────────────
+  type Rapport = { id: string; date: string; resume: Record<string, unknown> };
+  const [rapports, setRapports] = useState<Rapport[]>([]);
+  const [rapportsLoading, setRapportsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!profile?.brigadeId) { setRapportsLoading(false); return; }
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("rapports")
+          .select("id, date, resume")
+          .eq("brigade_id", profile.brigadeId)
+          .order("date", { ascending: false })
+          .limit(30);
+        setRapports((data ?? []) as Rapport[]);
+      } finally {
+        setRapportsLoading(false);
+      }
+    })();
+  }, [profile?.brigadeId]);
 
   // ── Personnel de la brigade ──────────────────────────────────────────────
   const [brigadeAgents, setBrigadeAgents] = useState<BrigadeAgent[]>([]);
@@ -259,8 +299,9 @@ function AgentPageContent() {
   const valeurTotaleMois = mySaisiesMois.reduce((sum, s) => sum + (s.valeur || 0), 0);
 
   const initiales = [profile?.prenom?.[0], profile?.nom?.[0]].filter(Boolean).join("").toUpperCase();
+  // Affichage compact en haut à droite : abréviation grade + nom de famille
   const agentLabel = profile
-    ? `${profile.grade ?? ""} ${profile.prenom ?? ""} ${profile.nom ?? ""}`.trim()
+    ? `${gradeAbbrev(profile.grade)} ${profile.nom ?? ""}`.trim()
     : "";
 
   const inputCls = "w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4A5C2F] bg-white";
@@ -281,50 +322,62 @@ function AgentPageContent() {
         </div>
       ) : !profile?.matricule ? (
         <p className="text-sm text-gray-400 text-center py-6">Aucun matricule associé à votre compte.</p>
-      ) : statut ? (
+      ) : (
         <>
-          <div className={`flex items-center gap-4 px-5 py-4 rounded-2xl border-2 mb-5 ${STATUT_STYLES[statut]}`}>
-            <div className="w-3 h-3 rounded-full bg-current opacity-80 shrink-0" />
-            <div>
-              <p className="font-bold text-base">{statut}</p>
-              <p className="text-xs opacity-70 mt-0.5">Statut défini par le Chef de Brigade</p>
+          {/* Statut actuel */}
+          {statut && (
+            <div className={`flex items-center gap-4 px-5 py-4 rounded-2xl border-2 mb-5 ${STATUT_STYLES[statut]}`}>
+              <div className="w-3 h-3 rounded-full bg-current opacity-80 shrink-0" />
+              <div>
+                <p className="font-bold text-base">{statut}</p>
+                <p className="text-xs opacity-70 mt-0.5">Votre statut actuel</p>
+              </div>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 ml-auto opacity-80" fill="none"
+                viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
             </div>
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 ml-auto opacity-80" fill="none"
-              viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <p className="text-xs text-gray-400 uppercase tracking-widest mb-3 font-semibold">Légende des statuts</p>
+          )}
+          {/* Sélecteur de statut */}
+          <p className="text-xs text-gray-400 uppercase tracking-widest mb-3 font-semibold">
+            {montageId ? "Modifier mon statut" : "Choisir mon statut"}
+          </p>
+          {!montageId && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5 mb-3">
+              Le montage du jour n&apos;a pas encore été créé par le Chef de Brigade. La mise à jour sera disponible dès qu&apos;il sera validé.
+            </p>
+          )}
           <div className="space-y-2">
             {STATUTS.map((s) => (
-              <div key={s} className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm
-                ${statut === s ? STATUT_STYLES[s] + " font-semibold" : "bg-gray-50 border-gray-100 text-gray-400"}`}>
-                <div className={`w-2 h-2 rounded-full shrink-0 ${statut === s ? "bg-current opacity-80" : "bg-gray-300"}`} />
-                {s}
-                {statut === s && <span className="ml-auto text-xs font-semibold opacity-70">Votre statut</span>}
-              </div>
+              <button
+                key={s}
+                disabled={!montageId || statutSaving}
+                onClick={() => handleUpdateStatut(s)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-sm text-left transition-all
+                  ${statut === s
+                    ? STATUT_STYLES[s] + " font-semibold shadow-sm"
+                    : "bg-gray-50 border-gray-100 text-gray-600 hover:bg-gray-100 hover:border-gray-200"}
+                  ${(!montageId || statutSaving) ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${statut === s ? "bg-current opacity-80" : "bg-gray-300"}`} />
+                <span className="flex-1">{s}</span>
+                {statutSaving && statut !== s ? null : statut === s ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 ml-auto" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : null}
+              </button>
             ))}
           </div>
+          {statutSaving && (
+            <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
+              <div className="w-3.5 h-3.5 border-2 border-[#4A5C2F] border-t-transparent rounded-full animate-spin" />
+              Mise à jour en cours…
+            </div>
+          )}
         </>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 mb-3 opacity-30" fill="none"
-            viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round"
-              d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-          </svg>
-          <p className="text-sm font-medium">Aucun statut défini pour aujourd&apos;hui</p>
-          <p className="text-xs mt-1">Le Chef de Brigade n&apos;a pas encore validé le montage du jour.</p>
-        </div>
       )}
-      <div className="mt-5 pt-4 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-400">
-        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 shrink-0" fill="none"
-          viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round"
-            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-        </svg>
-        Votre statut est défini exclusivement par le Chef de Brigade dans le montage journalier.
-      </div>
     </div>
   );
 
@@ -577,6 +630,86 @@ function AgentPageContent() {
                     ))}
                   </tbody>
                 </table>
+              )}
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════
+              RAPPORTS
+          ══════════════════════════════════════════════════════════════ */}
+          {activeTab === "rapports" && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="font-bold text-gray-800">Rapports de la brigade</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {brigadeName || "Ma brigade"} · consultation uniquement
+                </p>
+              </div>
+              {rapportsLoading ? (
+                <div className="flex justify-center py-10">
+                  <div className="w-6 h-6 border-2 border-[#4A5C2F] border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : !profile?.brigadeId ? (
+                <div className="px-6 py-8 text-center text-gray-400">
+                  <p className="text-sm">Aucune brigade associée à votre compte.</p>
+                </div>
+              ) : rapports.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 mb-2 opacity-30" fill="none"
+                    viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm">Aucun rapport disponible</p>
+                  <p className="text-xs mt-1">Les rapports apparaîtront ici dès leur création</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {rapports.map((r) => {
+                    const dateStr = r.date
+                      ? new Date(r.date + "T12:00:00").toLocaleDateString("fr-SN", {
+                          weekday: "long", day: "numeric", month: "long", year: "numeric"
+                        })
+                      : "—";
+                    const resume = r.resume as Record<string, unknown> | null;
+                    return (
+                      <div key={r.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-[#4A5C2F]/10 flex items-center justify-center shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-[#4A5C2F]" fill="none"
+                              viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round"
+                                d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-800 text-sm capitalize">{dateStr}</p>
+                            {resume && typeof resume === "object" && (
+                              <div className="flex flex-wrap gap-3 mt-1.5">
+                                {typeof resume.presents === "number" && (
+                                  <span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                                    {resume.presents} présent{(resume.presents as number) > 1 ? "s" : ""}
+                                  </span>
+                                )}
+                                {typeof resume.saisies === "number" && (
+                                  <span className="text-xs text-[#4A5C2F] bg-[#4A5C2F]/8 px-2 py-0.5 rounded-full">
+                                    {resume.saisies} saisie{(resume.saisies as number) > 1 ? "s" : ""}
+                                  </span>
+                                )}
+                                {typeof resume.valeurTotale === "number" && (resume.valeurTotale as number) > 0 && (
+                                  <span className="text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
+                                    {Number(resume.valeurTotale).toLocaleString("fr-SN")} FCFA
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-300 shrink-0">Lecture seule</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}
