@@ -113,32 +113,41 @@ function AgentPageContent() {
   useEffect(() => {
     if (!profile?.matricule) { setStatutLoading(false); return; }
     async function fetchStatut() {
-      let q = supabase.from("montages").select("id, statuts").eq("date", today);
-      if (profile?.brigadeId) q = q.eq("brigade_id", profile.brigadeId);
-      const { data } = await q.limit(1);
-      if (data && data.length > 0 && profile?.matricule) {
-        setMontageId(data[0].id ?? null);
-        const s = data[0].statuts?.[profile.matricule] as Statut | undefined;
-        if (s) setStatut(s);
+      try {
+        let q = supabase.from("montages").select("id, statuts").eq("date", today);
+        if (profile?.brigadeId) q = q.eq("brigade_id", profile.brigadeId);
+        const { data } = await q.limit(1);
+        if (data && data.length > 0 && profile?.matricule) {
+          setMontageId(data[0].id ?? null);
+          const s = data[0].statuts?.[profile.matricule] as Statut | undefined;
+          if (s) setStatut(s);
+        }
+      } catch {
+        // Erreur silencieuse
+      } finally {
+        setStatutLoading(false);
       }
-      setStatutLoading(false);
     }
-    fetchStatut();
+    void fetchStatut();
   }, [profile, today]);
 
   async function handleUpdateStatut(newStatut: Statut) {
     if (!profile?.matricule || !montageId) return;
     setStatutSaving(true);
-    // Lire les statuts actuels puis patcher
-    const { data: current } = await supabase
-      .from("montages")
-      .select("statuts")
-      .eq("id", montageId)
-      .single();
-    const merged = { ...(current?.statuts ?? {}), [profile.matricule]: newStatut };
-    await supabase.from("montages").update({ statuts: merged }).eq("id", montageId);
-    setStatut(newStatut);
-    setStatutSaving(false);
+    try {
+      const { data: current } = await supabase
+        .from("montages")
+        .select("statuts")
+        .eq("id", montageId)
+        .single();
+      const merged = { ...(current?.statuts ?? {}), [profile.matricule]: newStatut };
+      await supabase.from("montages").update({ statuts: merged }).eq("id", montageId);
+      setStatut(newStatut);
+    } catch {
+      // Erreur silencieuse
+    } finally {
+      setStatutSaving(false);
+    }
   }
 
   // ── Rapports de la brigade (CRUD) ───────────────────────────────────────
@@ -153,13 +162,15 @@ function AgentPageContent() {
 
   const fetchRapports = useCallback(async (brigadeId: string) => {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("rapports")
         .select("id, date, titre, contenu, created_by")
         .eq("brigade_id", brigadeId)
         .order("date", { ascending: false })
         .limit(50);
-      if (!error) setRapports((data ?? []) as Rapport[]);
+      setRapports((data ?? []) as Rapport[]);
+    } catch {
+      // Échec silencieux — la liste reste vide
     } finally {
       setRapportsLoading(false);
     }
@@ -167,7 +178,7 @@ function AgentPageContent() {
 
   useEffect(() => {
     if (!profile?.brigadeId) { setRapportsLoading(false); return; }
-    fetchRapports(profile.brigadeId);
+    void fetchRapports(profile.brigadeId);
   }, [profile?.brigadeId, fetchRapports]);
 
   function openNewRapport() {
@@ -185,28 +196,37 @@ function AgentPageContent() {
   async function handleSaveRapport() {
     if (!rapportForm.titre.trim() || !profile?.brigadeId) return;
     setRapportSaving(true);
-    const payload = {
-      date: rapportForm.date,
-      titre: rapportForm.titre.trim(),
-      contenu: rapportForm.contenu.trim() || null,
-    };
-    if (editingRapportId) {
-      await supabase.from("rapports").update(payload).eq("id", editingRapportId);
-    } else {
-      await supabase
-        .from("rapports")
-        .insert({ ...payload, brigade_id: profile.brigadeId, created_by: user?.id ?? null });
+    try {
+      const payload = {
+        date: rapportForm.date,
+        titre: rapportForm.titre.trim(),
+        contenu: rapportForm.contenu.trim() || null,
+      };
+      if (editingRapportId) {
+        await supabase.from("rapports").update(payload).eq("id", editingRapportId);
+      } else {
+        await supabase
+          .from("rapports")
+          .insert({ ...payload, brigade_id: profile.brigadeId, created_by: user?.id ?? null });
+      }
+      // Re-fetch pour afficher les données réelles
+      await fetchRapports(profile.brigadeId);
+      setShowRapportForm(false);
+      setEditingRapportId(null);
+    } catch {
+      // Erreur silencieuse — l'utilisateur voit le formulaire encore ouvert
+    } finally {
+      setRapportSaving(false);
     }
-    // Re-fetch depuis Supabase pour afficher les données réelles (evite les pb RLS sur select après insert)
-    await fetchRapports(profile.brigadeId);
-    setShowRapportForm(false);
-    setEditingRapportId(null);
-    setRapportSaving(false);
   }
 
   async function handleDeleteRapport(id: string) {
-    await supabase.from("rapports").delete().eq("id", id);
-    setRapports((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await supabase.from("rapports").delete().eq("id", id);
+      setRapports((prev) => prev.filter((r) => r.id !== id));
+    } catch {
+      // Échec silencieux
+    }
     setConfirmDeleteRapportId(null);
   }
 
@@ -227,8 +247,13 @@ function AgentPageContent() {
         const list = ((agentsRes.data ?? []) as BrigadeAgent[]);
         list.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
         setBrigadeAgents(list);
-        const statuts = (montageRes.data?.[0]?.statuts ?? {}) as Record<string, string>;
+        const rawStatuts = montageRes.data?.[0]?.statuts;
+        const statuts = (rawStatuts && typeof rawStatuts === "object" && !Array.isArray(rawStatuts))
+          ? (rawStatuts as Record<string, string>)
+          : {};
         setPersonnelStatuts(statuts);
+      } catch {
+        // Erreur silencieuse
       } finally {
         setAgentsLoading(false);
       }
