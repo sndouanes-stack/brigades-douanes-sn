@@ -6,7 +6,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/lib/useUserProfile";
-import { STATUTS, STATUT_STYLES, gradeAbbrev, type Statut } from "@/lib/agents";
+import { STATUTS, STATUT_STYLES, gradeAbbrev, isKnownGrade, type Statut } from "@/lib/agents";
 import { BRIGADES } from "@/lib/roles";
 import Sidebar from "@/components/Sidebar";
 
@@ -481,7 +481,7 @@ function AgentPageContent() {
                       {profile?.prenom} {profile?.nom}
                     </p>
                     <p className="text-sm text-[#4A5C2F] font-semibold mt-0.5">
-                      {profile?.grade || "—"}
+                      {isKnownGrade(profile?.grade) ? profile.grade : "—"}
                     </p>
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {profile?.matricule && (

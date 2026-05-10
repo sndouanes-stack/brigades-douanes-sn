@@ -295,6 +295,17 @@ export default function PersonnelPage() {
     repos:            Object.values(todayStatuts).filter((s) => s === "Repos").length,
   };
 
+  // Agents « fantômes » : dans le montage mais pas dans la table agents (matricule inconnu)
+  const agentsMatricules = useMemo(() => new Set(agents.map((a) => a.matricule)), [agents]);
+  const ghostAgents = useMemo<AgentDynamic[]>(() =>
+    Object.keys(todayStatuts)
+      .filter((m) => !agentsMatricules.has(m))
+      .map((m) => ({ id: undefined, matricule: m, nom: m, prenom: "", grade: "" })),
+    [todayStatuts, agentsMatricules]
+  );
+  // Liste unifiée : table agents + fantômes du montage
+  const effectiveAgents = useMemo(() => [...agents, ...ghostAgents], [agents, ghostAgents]);
+
   const lastMontage = allMontages.find((m) => m.date < today) ?? null;
 
   function handlePrint() {
@@ -332,7 +343,7 @@ export default function PersonnelPage() {
       <polygon points="45,20 47.4,26.8 54.5,26.9 48.8,31.2 50.9,38.1 45,34 39.1,38.1 41.2,31.2 35.5,26.9 42.6,26.8" fill="#00853F"/>
     </svg>`;
 
-    const rows = agents.map((agent) => {
+    const rows = effectiveAgents.map((agent) => {
       const statut = todayStatuts[agent.matricule] as Statut | undefined;
       return `<tr>
         <td class="mono">${agent.matricule}</td>
@@ -462,18 +473,18 @@ export default function PersonnelPage() {
 
   const agentsFiltres = useMemo(() => {
     const terme = search.toLowerCase();
-    return agents.filter((a) => {
+    return effectiveAgents.filter((a) => {
       const matchSearch =
         terme === "" ||
         a.nom.toLowerCase().includes(terme) ||
         a.prenom.toLowerCase().includes(terme) ||
         a.matricule.toLowerCase().includes(terme) ||
-        a.grade.toLowerCase().includes(terme);
+        (a.grade || "").toLowerCase().includes(terme);
       const matchStatut =
         filterStatut === "Tous" || todayStatuts[a.matricule] === filterStatut;
       return matchSearch && matchStatut;
     });
-  }, [agents, search, filterStatut, todayStatuts]);
+  }, [effectiveAgents, search, filterStatut, todayStatuts]);
 
   if (loading || !user) {
     return (
@@ -678,7 +689,7 @@ export default function PersonnelPage() {
                     <p className={`text-3xl font-bold ${item.color}`}>
                       {loadingMontages ? "—" : todayCounts[item.key]}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">sur {agents.length} agents</p>
+                    <p className="text-xs text-gray-400 mt-1">sur {effectiveAgents.length} agents</p>
                   </button>
                 ))}
               </div>
@@ -831,7 +842,7 @@ export default function PersonnelPage() {
                   <h2 className="font-bold text-gray-800">
                     Liste des agents
                     <span className="ml-2 text-sm font-normal text-gray-400">
-                      ({agentsFiltres.length} / {agents.length})
+                      ({agentsFiltres.length} / {effectiveAgents.length})
                     </span>
                   </h2>
                 </div>
@@ -1048,7 +1059,7 @@ export default function PersonnelPage() {
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-5 border-b border-gray-100">
-                  <h3 className="font-bold text-gray-800">Détail des {agents.length} agents</h3>
+                  <h3 className="font-bold text-gray-800">Détail des {effectiveAgents.length} agents</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -1061,7 +1072,7 @@ export default function PersonnelPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {agents.map((agent) => {
+                      {effectiveAgents.map((agent) => {
                         const statut = selectedMontage.statuts[agent.matricule] as Statut | undefined;
                         const isSelf = isAgent && agent.matricule === myStatutKey;
                         return (

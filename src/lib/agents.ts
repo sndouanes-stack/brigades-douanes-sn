@@ -62,10 +62,15 @@ export const GRADE_ABBREV: Record<string, string> = {
   "Inspecteur des Douanes":   "Insp",
 };
 
-/** Retourne l'abréviation d'un grade, ou le grade complet si inconnu */
+/** Retourne l'abréviation d'un grade connu, chaîne vide pour tout grade inconnu */
 export function gradeAbbrev(grade: string | undefined | null): string {
   if (!grade) return "";
-  return GRADE_ABBREV[grade] ?? grade;
+  return GRADE_ABBREV[grade] ?? "";
+}
+
+/** Vérifie si un grade est un grade douanier reconnu */
+export function isKnownGrade(grade: string | undefined | null): grade is Grade {
+  return !!grade && (GRADES as string[]).includes(grade);
 }
 
 export const STATUT_DOT: Record<Statut, string> = {
