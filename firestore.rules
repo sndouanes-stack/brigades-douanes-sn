@@ -1,0 +1,129 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAgent() {
+      return getUserRole() == "AGENT";
+    }
+
+    function isChefBrigade() {
+      return getUserRole() == "CHEF_BRIGADE";
+    }
+
+    function isSupervisor() {
+      return getUserRole() in ["CHEF_SUBDIVISION", "DIRECTEUR_REGIONAL", "ADMIN"];
+    }
+
+    function isOperational() {
+      return getUserRole() in ["AGENT", "CHEF_BRIGADE"];
+    }
+
+    // ── Utilisateurs ─────────────────────────────────────────────────────────
+
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && getUserRole() == "ADMIN";
+    }
+
+    // ── Agents (effectif de la brigade) ──────────────────────────────────────
+
+    match /agents/{agentId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isChefBrigade();
+      allow delete: if isAuthenticated() && (isChefBrigade() || isSupervisor());
+    }
+
+    // ── Montages journaliers ──────────────────────────────────────────────────
+
+    match /montages/{montageId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && (isChefBrigade() || isAgent());
+      allow delete: if isAuthenticated() && isChefBrigade();
+    }
+
+    // ── Saisies ───────────────────────────────────────────────────────────────
+    // Un agent peut créer et modifier UNIQUEMENT ses propres saisies.
+    // Un Chef de Brigade peut créer et modifier toutes les saisies.
+    // Superviseurs : lecture seule.
+
+    match /saisies/{saisieId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated()
+        && isOperational()
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if isAuthenticated() && (
+        // Agent : uniquement ses propres saisies
+        (isAgent() && resource.data.createdBy == request.auth.uid)
+        // Chef de Brigade : toutes les saisies
+        || isChefBrigade()
+      );
+
+      allow delete: if isAuthenticated() && (
+        (isAgent() && resource.data.createdBy == request.auth.uid)
+        || isChefBrigade()
+        || isSupervisor()
+      );
+    }
+
+    // ── PV de Saisie (complet) ────────────────────────────────────────────────
+
+    match /pv_saisies/{pvId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOperational();
+      allow update, delete: if isAuthenticated() && isChefBrigade();
+    }
+
+    // ── Règlements Transactionnels ────────────────────────────────────────────
+
+    match /reglements_transactionnels/{rtId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isChefBrigade();
+      allow update, delete: if isAuthenticated() && isChefBrigade();
+    }
+
+    // ── Caisse / Transactions ─────────────────────────────────────────────────
+
+    match /transactions/{txId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isChefBrigade();
+      allow delete: if isAuthenticated() && isChefBrigade();
+    }
+
+    // ── Main courante ─────────────────────────────────────────────────────────
+
+    match /main_courante/{evId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isOperational();
+      allow delete: if isAuthenticated() && isChefBrigade();
+    }
+
+    // ── Correspondances ───────────────────────────────────────────────────────
+
+    match /correspondances/{corrId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isChefBrigade();
+      allow delete: if isAuthenticated() && isChefBrigade();
+    }
+
+    // ── Quittances RS ─────────────────────────────────────────────────────────
+
+    match /quittances/{qId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isChefBrigade();
+      allow update, delete: if isAuthenticated() && isChefBrigade();
+    }
+  }
+}
