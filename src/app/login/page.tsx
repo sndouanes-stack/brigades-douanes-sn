@@ -75,7 +75,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           <div className="bg-[#4A5C2F] px-8 py-10 text-center">
             <div className="mx-auto mb-5 w-24 h-24 rounded-full bg-white flex items-center justify-center shadow-lg ring-4 ring-[#C9A84C]/30 overflow-hidden">
-              <Image src="/images/logo-douanes.png" alt="Logo Douanes Sénégal" width={88} height={88} className="object-contain" />
+              <Image src="/images/logo-douanes.png" alt="Logo Douanes Sénégal" width={88} height={88} className="object-contain" priority unoptimized />
             </div>
             <h1 className="text-white text-2xl font-bold tracking-wide leading-tight">Douanes SN</h1>
             <p className="text-[#C9A84C] text-xs font-semibold mt-1 tracking-[0.2em] uppercase">Brigades Mobiles</p>

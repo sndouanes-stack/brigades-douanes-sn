@@ -2,11 +2,11 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/lib/useUserProfile";
-import { STATUTS, STATUT_STYLES, gradeAbbrev, isKnownGrade, type Statut } from "@/lib/agents";
+import { STATUTS, STATUT_STYLES, STATUT_DOT, gradeAbbrev, isKnownGrade, type Statut } from "@/lib/agents";
 import { BRIGADES } from "@/lib/roles";
 import Sidebar from "@/components/Sidebar";
 
@@ -151,22 +151,24 @@ function AgentPageContent() {
   const [rapportSaving, setRapportSaving] = useState(false);
   const [confirmDeleteRapportId, setConfirmDeleteRapportId] = useState<string | null>(null);
 
+  const fetchRapports = useCallback(async (brigadeId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("rapports")
+        .select("id, date, titre, contenu, created_by")
+        .eq("brigade_id", brigadeId)
+        .order("date", { ascending: false })
+        .limit(50);
+      if (!error) setRapports((data ?? []) as Rapport[]);
+    } finally {
+      setRapportsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!profile?.brigadeId) { setRapportsLoading(false); return; }
-    (async () => {
-      try {
-        const { data } = await supabase
-          .from("rapports")
-          .select("id, date, titre, contenu, created_by")
-          .eq("brigade_id", profile.brigadeId)
-          .order("date", { ascending: false })
-          .limit(50);
-        setRapports((data ?? []) as Rapport[]);
-      } finally {
-        setRapportsLoading(false);
-      }
-    })();
-  }, [profile?.brigadeId]);
+    fetchRapports(profile.brigadeId);
+  }, [profile?.brigadeId, fetchRapports]);
 
   function openNewRapport() {
     setRapportForm({ date: new Date().toISOString().split("T")[0], titre: "", contenu: "" });
@@ -190,15 +192,13 @@ function AgentPageContent() {
     };
     if (editingRapportId) {
       await supabase.from("rapports").update(payload).eq("id", editingRapportId);
-      setRapports((prev) => prev.map((r) => r.id === editingRapportId ? { ...r, ...payload } : r));
     } else {
-      const { data: newRow } = await supabase
+      await supabase
         .from("rapports")
-        .insert({ ...payload, brigade_id: profile.brigadeId, created_by: user?.id ?? null })
-        .select()
-        .single();
-      if (newRow) setRapports((prev) => [{ ...newRow as Rapport }, ...prev]);
+        .insert({ ...payload, brigade_id: profile.brigadeId, created_by: user?.id ?? null });
     }
+    // Re-fetch depuis Supabase pour afficher les données réelles (evite les pb RLS sur select après insert)
+    await fetchRapports(profile.brigadeId);
     setShowRapportForm(false);
     setEditingRapportId(null);
     setRapportSaving(false);
@@ -213,20 +213,27 @@ function AgentPageContent() {
   // ── Personnel de la brigade ──────────────────────────────────────────────
   const [brigadeAgents, setBrigadeAgents] = useState<BrigadeAgent[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
+  const [personnelStatuts, setPersonnelStatuts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!profile?.brigadeId) { setAgentsLoading(false); return; }
     (async () => {
       try {
-        const { data } = await supabase.from("agents").select("*").eq("brigade_id", profile.brigadeId);
-        const list = ((data ?? []) as BrigadeAgent[]);
+        const [agentsRes, montageRes] = await Promise.all([
+          supabase.from("agents").select("*").eq("brigade_id", profile.brigadeId),
+          supabase.from("montages").select("statuts")
+            .eq("brigade_id", profile.brigadeId).eq("date", today).limit(1),
+        ]);
+        const list = ((agentsRes.data ?? []) as BrigadeAgent[]);
         list.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
         setBrigadeAgents(list);
+        const statuts = (montageRes.data?.[0]?.statuts ?? {}) as Record<string, string>;
+        setPersonnelStatuts(statuts);
       } finally {
         setAgentsLoading(false);
       }
     })();
-  }, [profile?.brigadeId]);
+  }, [profile?.brigadeId, today]);
 
   // ── Saisies ──────────────────────────────────────────────────────────────
   const [saisies, setSaisies]             = useState<Saisie[]>([]);
@@ -660,21 +667,35 @@ function AgentPageContent() {
                       <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Matricule</th>
                       <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nom & Prénom</th>
                       <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Grade</th>
+                      <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Statut du jour</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {brigadeAgents.map((a) => (
-                      <tr key={a.id} className={`hover:bg-gray-50 transition-colors ${a.matricule === profile?.matricule ? "bg-[#4A5C2F]/5" : ""}`}>
-                        <td className="px-5 py-3 font-mono text-xs text-gray-500">
-                          {a.matricule}
-                          {a.matricule === profile?.matricule && (
-                            <span className="ml-1.5 text-[10px] text-[#4A5C2F] font-bold">(moi)</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3 font-semibold text-gray-800">{a.nom} {a.prenom}</td>
-                        <td className="px-5 py-3 text-gray-500 text-xs hidden sm:table-cell">{a.grade || "—"}</td>
-                      </tr>
-                    ))}
+                    {brigadeAgents.map((a) => {
+                      const s = personnelStatuts[a.matricule] as Statut | undefined;
+                      return (
+                        <tr key={a.id} className={`hover:bg-gray-50 transition-colors ${a.matricule === profile?.matricule ? "bg-[#4A5C2F]/5" : ""}`}>
+                          <td className="px-5 py-3 font-mono text-xs text-gray-500">
+                            {a.matricule}
+                            {a.matricule === profile?.matricule && (
+                              <span className="ml-1.5 text-[10px] text-[#4A5C2F] font-bold">(moi)</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 font-semibold text-gray-800">{a.prenom} <span className="uppercase">{a.nom}</span></td>
+                          <td className="px-5 py-3 text-gray-500 text-xs hidden sm:table-cell">{a.grade || "—"}</td>
+                          <td className="px-5 py-3">
+                            {s ? (
+                              <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium border ${STATUT_STYLES[s]}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUT_DOT[s]}`} />
+                                {s}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400 italic">Non défini</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}

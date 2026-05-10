@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
 import ReadOnlyBanner from "@/components/ReadOnlyBanner";
@@ -41,18 +41,17 @@ export default function MainCourantePage() {
   const [agent, setAgent] = useState("");
 
   // Charge les événements du jour
-  useEffect(() => {
-    async function load() {
-      const { data } = await supabase
-        .from("main_courante")
-        .select("*")
-        .eq("date", today);
-      const list = (data ?? []) as Evenement[];
-      list.sort((a, b) => a.heure.localeCompare(b.heure));
-      setEvents(list);
-    }
-    load();
+  const loadEvents = useCallback(async () => {
+    const { data } = await supabase
+      .from("main_courante")
+      .select("*")
+      .eq("date", today);
+    const list = (data ?? []) as Evenement[];
+    list.sort((a, b) => a.heure.localeCompare(b.heure));
+    setEvents(list);
   }, [today]);
+
+  useEffect(() => { loadEvents(); }, [loadEvents]);
 
   function openNew() {
     const d = new Date();
@@ -86,27 +85,12 @@ export default function MainCourantePage() {
     const payload = { heure, nature, description: description.trim(), lieu: lieu.trim(), agent: agent.trim() };
 
     if (editingId) {
-      // Mise à jour
       await supabase.from("main_courante").update(payload).eq("id", editingId);
-      setEvents((prev) =>
-        prev.map((e) => e.id === editingId ? { ...e, ...payload } : e)
-           .sort((a, b) => a.heure.localeCompare(b.heure))
-      );
     } else {
-      // Création
-      const { data: newRow } = await supabase
-        .from("main_courante")
-        .insert({ ...payload, date: today })
-        .select()
-        .single();
-      if (newRow) {
-        setEvents((prev) =>
-          [...prev, { id: newRow.id, date: today, ...payload }]
-            .sort((a, b) => a.heure.localeCompare(b.heure))
-        );
-      }
+      await supabase.from("main_courante").insert({ ...payload, date: today });
     }
-
+    // Re-fetch pour afficher les données réelles (évite les pb RLS sur select après insert)
+    await loadEvents();
     closeForm();
     setSaving(false);
   }
