@@ -88,7 +88,7 @@ export default function MainCourantePage() {
         const { error } = await supabase.from("main_courante").update(payload).eq("id", editingId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("main_courante").insert({ ...payload, date: today, brigade_id: profile?.brigadeId ?? null, created_by: profile?.id ?? "" });
+        const { error } = await supabase.from("main_courante").insert({ ...payload, date: today, brigade_id: profile?.brigadeId ?? null, created_by: profile?.uid ?? "" });
         if (error) throw error;
       }
       // Re-fetch pour afficher les données réelles (évite les pb RLS sur select après insert)

@@ -749,7 +749,7 @@ function printRT(saisie: Saisie, rt: RTFormState) {
 // ── Composant ─────────────────────────────────────────────────────────────────
 
 export default function SaisiesPage() {
-  const { isReadOnly, user } = useRole();
+  const { isReadOnly, user, profile } = useRole();
   const [saisies, setSaisies] = useState<Saisie[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -858,7 +858,7 @@ export default function SaisiesPage() {
         const { numeroPV, ...rest } = payload;
         const { data: newRow, error } = await supabase
           .from("saisies")
-          .insert({ ...rest, numero, numero_pv: numeroPV, created_by: profile?.id ?? "", brigade_id: profile?.brigadeId ?? null })
+          .insert({ ...rest, numero, numero_pv: numeroPV, created_by: profile?.uid ?? "", brigade_id: profile?.brigadeId ?? null })
           .select()
           .single();
         if (error) throw error;

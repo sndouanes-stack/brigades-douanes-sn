@@ -44,24 +44,11 @@ export default function TransactionModal({ type, onClose, onSaved }: Props) {
     setSaving(true);
     setError("");
     try {
-      // Récupérer l'utilisateur connecté
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Non authentifié");
-
-      // Récupérer le profil pour avoir brigade_id
-      const { data: profile } = await supabase
-        .from("users")
-        .select("brigade_id")
-        .eq("id", user.id)
-        .single();
-
       const payload = {
         type,
         montant: montantNum,
-        libelle: motif.trim(),   // ← colonne correcte dans Supabase
+        libelle: motif.trim(),
         date,
-        brigade_id: profile?.brigade_id ?? null,
-        created_by: user.id,
       };
 
       const { data, error: dbError } = await supabase
