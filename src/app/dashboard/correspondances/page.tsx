@@ -27,8 +27,8 @@ function buildNextNumero(courriers: Courrier[], type: TypeCourrier): string {
   const year   = new Date().getFullYear();
   const prefix = type === "arrivee" ? "ARR" : "DEP";
   const existing = courriers
-    .filter((c) => c.type === type && c.numero.startsWith(`${prefix}-${year}`))
-    .map((c) => parseInt(c.numero.split("-")[2] ?? "0", 10))
+    .filter((c) => c.type === type && c.numero?.startsWith(`${prefix}-${year}`))
+    .map((c) => parseInt((c.numero ?? "").split("-")[2] ?? "0", 10))
     .filter((n) => !isNaN(n));
   const next = existing.length > 0 ? Math.max(...existing) + 1 : 1;
   return `${prefix}-${year}-${String(next).padStart(3, "0")}`;
@@ -112,26 +112,36 @@ export default function CorrespondancesPage() {
     if (!courrier.id) return;
     setUpdatingId(courrier.id);
     try {
-      await supabase.from("correspondances").update({ statut: newStatut }).eq("id", courrier.id);
+      const { error: dbError } = await supabase
+        .from("correspondances")
+        .update({ statut: newStatut })
+        .eq("id", courrier.id);
+      if (dbError) { console.error("[Correspondances] Erreur statut:", dbError); return; }
       setCourriers((prev) => prev.map((c) => c.id === courrier.id ? { ...c, statut: newStatut } : c));
-    } catch { /* silencieux */ }
-    finally { setUpdatingId(null); }
+    } catch (err) {
+      console.error("[Correspondances] Erreur statut:", err);
+    } finally { setUpdatingId(null); }
   }
 
   function handlePrint() {
     const win = window.open("", "_blank");
     if (!win) return;
     const all = [...courriers].sort((a, b) => b.date.localeCompare(a.date));
-    const rows = all.map((c) => `
+    const rows = all.map((c) => {
+      const personne = c.type === "arrivee"
+        ? (c.expediteur ?? c.interlocuteur ?? "—")
+        : (c.destinataire ?? c.interlocuteur ?? "—");
+      return `
       <tr class="${c.urgence === "Urgent" ? "urgent" : ""}">
-        <td class="mono">${c.numero}</td>
+        <td class="mono">${c.numero ?? "—"}</td>
         <td>${c.type === "arrivee" ? "Arrivée" : "Départ"}</td>
         <td>${new Date(c.date + "T12:00:00").toLocaleDateString("fr-SN", { day: "numeric", month: "short", year: "numeric" })}</td>
-        <td>${c.interlocuteur}${c.structure ? " / " + c.structure : ""}</td>
+        <td>${personne}${c.structure ? " / " + c.structure : ""}</td>
         <td>${c.objet}</td>
-        <td>${c.urgence}</td>
+        <td>${c.urgence ?? "Normal"}</td>
         <td>${c.statut}</td>
-      </tr>`).join("");
+      </tr>`;
+    }).join("");
     win.document.write(`<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8">
 <title>Registre des correspondances</title>
@@ -178,14 +188,22 @@ export default function CorrespondancesPage() {
     );
   }
 
+  // Résout le nom de l'interlocuteur depuis les colonnes DB (expediteur/destinataire)
+  // ou depuis l'ancien champ local interlocuteur (données pré-migration)
+  function getPersonne(c: Courrier): string {
+    return (c.type === "arrivee"
+      ? c.expediteur ?? c.interlocuteur
+      : c.destinataire ?? c.interlocuteur) ?? "";
+  }
+
   const courriersFiltres = courriers.filter((c) => {
     if (c.type !== onglet) return false;
     if (filterStatut !== "Tous" && c.statut !== filterStatut) return false;
     if (search) {
       const q = search.toLowerCase();
       return (
-        c.numero.toLowerCase().includes(q) ||
-        c.interlocuteur.toLowerCase().includes(q) ||
+        (c.numero ?? "").toLowerCase().includes(q) ||
+        getPersonne(c).toLowerCase().includes(q) ||
         (c.structure ?? "").toLowerCase().includes(q) ||
         c.objet.toLowerCase().includes(q)
       );
@@ -193,10 +211,10 @@ export default function CorrespondancesPage() {
     return true;
   });
 
-  const arriveeCount  = courriers.filter((c) => c.type === "arrivee").length;
-  const departCount   = courriers.filter((c) => c.type === "depart").length;
-  const urgentsCount  = courriers.filter((c) => c.urgence === "Urgent" && c.statut !== "Traité" && c.statut !== "Envoyé").length;
-  const enAttenteCount= courriers.filter((c) => c.statut === "En attente" || c.statut === "En attente d'envoi").length;
+  const arriveeCount   = courriers.filter((c) => c.type === "arrivee").length;
+  const departCount    = courriers.filter((c) => c.type === "depart").length;
+  const urgentsCount   = courriers.filter((c) => c.urgence === "Urgent" && c.statut !== "Traité" && c.statut !== "Envoyé").length;
+  const enAttenteCount = courriers.filter((c) => c.statut === "En attente" || c.statut === "En attente d'envoi").length;
 
   const nextNumero = buildNextNumero(courriers, onglet);
   const statutOptions = onglet === "arrivee" ? STATUTS_ARRIVEE : STATUTS_DEPART;
@@ -419,7 +437,7 @@ export default function CorrespondancesPage() {
 
                         {/* Expéditeur / Destinataire */}
                         <td className="px-5 py-3.5 max-w-[160px]">
-                          <p className="font-medium text-gray-800 truncate">{courrier.interlocuteur}</p>
+                          <p className="font-medium text-gray-800 truncate">{getPersonne(courrier)}</p>
                           {courrier.structure && (
                             <p className="text-xs text-gray-400 truncate">{courrier.structure}</p>
                           )}

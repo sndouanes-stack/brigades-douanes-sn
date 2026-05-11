@@ -180,15 +180,15 @@ function AgentPageContent() {
   const [rapportSaving, setRapportSaving] = useState(false);
   const [confirmDeleteRapportId, setConfirmDeleteRapportId] = useState<string | null>(null);
 
-  const fetchRapports = useCallback(async (brigadeId: string) => {
+  const fetchRapports = useCallback(async (_brigadeId: string) => {
     try {
-      const { data } = await supabase
-        .from("rapports")
-        .select("id, date, titre, contenu, created_by")
-        .eq("brigade_id", brigadeId)
-        .order("date", { ascending: false })
-        .limit(50);
-      setRapports((data ?? []) as Rapport[]);
+      // Utilise l'API route côté serveur (service role) pour contourner la
+      // politique RLS "own write" qui bloquerait les rapports des autres agents.
+      const res = await fetch("/api/brigade/rapports");
+      if (res.ok) {
+        const json = await res.json() as { rapports?: Rapport[] };
+        setRapports(json.rapports ?? []);
+      }
     } catch {
       // Échec silencieux — la liste reste vide
     } finally {
@@ -478,6 +478,52 @@ function AgentPageContent() {
             <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
               <div className="w-3.5 h-3.5 border-2 border-[#4A5C2F] border-t-transparent rounded-full animate-spin" />
               Mise à jour en cours…
+            </div>
+          )}
+
+          {/* Statuts de tous les agents de la brigade */}
+          {brigadeAgents.length > 0 && (
+            <div className="mt-6 pt-5 border-t border-gray-100">
+              <p className="text-xs text-gray-400 uppercase tracking-widest mb-3 font-semibold">
+                Statuts de la brigade — {new Date().toLocaleDateString("fr-SN", { day: "numeric", month: "long" })}
+              </p>
+              <div className="space-y-2">
+                {brigadeAgents.map((a) => {
+                  const s = personnelStatuts[a.matricule] as Statut | undefined;
+                  const isMe = a.matricule === profile?.matricule;
+                  const initA = [a.prenom?.[0], a.nom?.[0]].filter(Boolean).join("").toUpperCase();
+                  return (
+                    <div key={a.id}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${
+                        isMe ? "bg-[#4A5C2F]/5 border-[#4A5C2F]/20" : "bg-gray-50 border-gray-100"
+                      }`}>
+                      {/* Avatar */}
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                        isMe ? "bg-[#4A5C2F] text-[#C9A84C]" : "bg-gray-200 text-gray-500"
+                      }`}>
+                        {initA || "?"}
+                      </div>
+                      {/* Nom */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">
+                          {a.prenom} <span className="uppercase">{a.nom}</span>
+                          {isMe && <span className="ml-1.5 text-[10px] text-[#4A5C2F] font-bold">(moi)</span>}
+                        </p>
+                        <p className="text-[11px] text-gray-400 truncate">{a.grade || "—"}</p>
+                      </div>
+                      {/* Badge statut */}
+                      {s ? (
+                        <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium border shrink-0 ${STATUT_STYLES[s]}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUT_DOT[s]}`} />
+                          {s}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-gray-400 italic shrink-0">Non défini</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </>

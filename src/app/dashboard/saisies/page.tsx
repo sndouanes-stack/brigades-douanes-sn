@@ -843,29 +843,45 @@ export default function SaisiesPage() {
       observations: form.observations.trim(), statut: form.statut,
     };
 
-    if (editingId) {
-      const { numeroPV: pvNum, ...updateRest } = payload;
-      await supabase.from("saisies").update({ ...updateRest, numero_pv: pvNum }).eq("id", editingId);
-      setSaisies((prev) => prev.map((s) => s.id === editingId ? { ...s, ...payload } : s));
-    } else {
-      const year = new Date(form.date).getFullYear();
-      const numero = await getNextNumero(year);
-      const { numeroPV, ...rest } = payload;
-      const { data: newRow } = await supabase
-        .from("saisies")
-        .insert({ ...rest, numero, numero_pv: numeroPV, created_by: user?.id ?? "" })
-        .select()
-        .single();
-      if (newRow) setSaisies((prev) => [{ id: newRow.id, numero, ...payload }, ...prev]);
+    try {
+      if (editingId) {
+        const { numeroPV: pvNum, ...updateRest } = payload;
+        const { error } = await supabase
+          .from("saisies")
+          .update({ ...updateRest, numero_pv: pvNum })
+          .eq("id", editingId);
+        if (error) throw error;
+        setSaisies((prev) => prev.map((s) => s.id === editingId ? { ...s, ...payload } : s));
+      } else {
+        const year = new Date(form.date).getFullYear();
+        const numero = await getNextNumero(year);
+        const { numeroPV, ...rest } = payload;
+        const { data: newRow, error } = await supabase
+          .from("saisies")
+          .insert({ ...rest, numero, numero_pv: numeroPV, created_by: profile?.id ?? "", brigade_id: profile?.brigadeId ?? null })
+          .select()
+          .single();
+        if (error) throw error;
+        if (newRow) setSaisies((prev) => [{ id: newRow.id, numero, ...payload }, ...prev]);
+      }
+      closeForm();
+    } catch (error) {
+      console.error("[Saisies] Erreur sauvegarde:", error);
+    } finally {
+      setSaving(false);
     }
-    closeForm();
-    setSaving(false);
   }
 
   async function handleDelete(id: string) {
-    await supabase.from("saisies").delete().eq("id", id);
-    setSaisies((prev) => prev.filter((s) => s.id !== id));
-    setConfirmDeleteId(null);
+    try {
+      const { error } = await supabase.from("saisies").delete().eq("id", id);
+      if (error) { console.error("[Saisies] Erreur suppression:", error); return; }
+      setSaisies((prev) => prev.filter((s) => s.id !== id));
+    } catch (error) {
+      console.error("[Saisies] Erreur suppression:", error);
+    } finally {
+      setConfirmDeleteId(null);
+    }
   }
 
   // ── Règlement Transactionnel ─────────────────────────────────────────────────

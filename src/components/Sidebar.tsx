@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { memo, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useUserProfile } from "@/lib/useUserProfile";
 
-// Navigation spécifique aux agents — tab=null|statut|personnel|saisies
-const NAV_ITEMS_AGENT = [
+// ── Constantes stable (module-level) ──────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const NAV_ITEMS_AGENT: { label: string; href: string; tab: string | null; icon: React.ReactNode }[] = [
   {
     label: "Tableau de bord",
     href: "/agent",
-    tab: null as string | null,
+    tab: null,
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none"
         viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -71,7 +73,7 @@ const NAV_ITEMS_AGENT = [
   },
 ];
 
-const NAV_ITEMS = [
+const NAV_ITEMS: { label: string; href: string; icon: React.ReactNode }[] = [
   {
     label: "Tableau de bord",
     href: "/dashboard",
@@ -164,53 +166,27 @@ const NAV_ITEMS = [
   },
 ];
 
-function getRoleCookie(): string {
-  if (typeof document === "undefined") return "";
-  const match = document.cookie.match(/(?:^|;\s*)role=([^;]*)/);
-  return match ? decodeURIComponent(match[1]).toUpperCase() : "";
-}
+// ── Style stable pour le logo ─────────────────────────────────────────────────
+const LOGO_STYLE: React.CSSProperties = { objectFit: "contain", flexShrink: 0 };
 
-function SidebarContent() {
+// ── Partie dynamique (useSearchParams nécessite Suspense) ─────────────────────
+
+function SidebarNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { profile } = useUserProfile();
-  const [cookieRole, setCookieRole] = useState("");
 
-  useEffect(() => {
-    setCookieRole(getRoleCookie());
-  }, []);
-
-  // Profil Firestore en priorité (normalisé en majuscules), sinon cookie role
-  const roleUpper = profile?.role?.toUpperCase() || cookieRole;
+  const roleUpper = profile?.role?.toUpperCase() ?? "";
   const isAdmin = roleUpper === "ADMIN";
   const isAgent = roleUpper === "AGENT";
-
   const currentTab = searchParams.get("tab");
   const visibleNavItems = isAgent ? NAV_ITEMS_AGENT : NAV_ITEMS;
 
   return (
-    <aside className="w-64 shrink-0 min-h-screen bg-[#4A5C2F] flex flex-col shadow-xl">
-
-      {/* Logo */}
-      <div className="px-6 py-7 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/images/logo-douanes.png"
-            alt="Logo Douanes SN"
-            style={{ width: 50, height: 50, objectFit: "contain", flexShrink: 0 }}
-          />
-          <div>
-            <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
-            <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Brigades</p>
-          </div>
-        </div>
-      </div>
-
+    <>
       {/* Navigation */}
       <nav className="flex-1 px-3 py-5 space-y-1">
         {visibleNavItems.map((item) => {
-          // Pour les agents : active state basé sur le param ?tab
           const isActive = isAgent && "tab" in item
             ? pathname === "/agent" && currentTab === item.tab
             : pathname === item.href.split("?")[0];
@@ -277,6 +253,38 @@ function SidebarContent() {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+// ── Composant exporté ─────────────────────────────────────────────────────────
+
+const Sidebar = memo(function Sidebar() {
+  return (
+    <aside className="w-64 shrink-0 min-h-screen bg-[#4A5C2F] flex flex-col shadow-xl">
+
+      {/* Logo — HORS du Suspense pour ne jamais disparaître lors des re-renders */}
+      <div className="px-6 py-7 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/logo-douanes.png"
+            alt="Logo Douanes SN"
+            width={50}
+            height={50}
+            style={LOGO_STYLE}
+          />
+          <div>
+            <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
+            <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Brigades</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation + Admin — dans Suspense car useSearchParams l'exige */}
+      <Suspense fallback={<div className="flex-1" />}>
+        <SidebarNav />
+      </Suspense>
 
       {/* Footer */}
       <div className="px-6 py-4 border-t border-white/10">
@@ -286,14 +294,6 @@ function SidebarContent() {
       </div>
     </aside>
   );
-}
+});
 
-export default function Sidebar() {
-  return (
-    <Suspense fallback={
-      <aside className="w-64 shrink-0 min-h-screen bg-[#4A5C2F] flex flex-col shadow-xl" />
-    }>
-      <SidebarContent />
-    </Suspense>
-  );
-}
+export default Sidebar;

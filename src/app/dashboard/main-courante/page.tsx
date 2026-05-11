@@ -83,22 +83,34 @@ export default function MainCourantePage() {
     if (!description.trim() || !lieu.trim() || !agent.trim()) return;
     setSaving(true);
     const payload = { heure, nature, description: description.trim(), lieu: lieu.trim(), agent: agent.trim() };
-
-    if (editingId) {
-      await supabase.from("main_courante").update(payload).eq("id", editingId);
-    } else {
-      await supabase.from("main_courante").insert({ ...payload, date: today });
+    try {
+      if (editingId) {
+        const { error } = await supabase.from("main_courante").update(payload).eq("id", editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("main_courante").insert({ ...payload, date: today, brigade_id: profile?.brigadeId ?? null, created_by: profile?.id ?? "" });
+        if (error) throw error;
+      }
+      // Re-fetch pour afficher les données réelles (évite les pb RLS sur select après insert)
+      await loadEvents();
+      closeForm();
+    } catch (error) {
+      console.error("[MainCourante] Erreur sauvegarde:", error);
+    } finally {
+      setSaving(false);
     }
-    // Re-fetch pour afficher les données réelles (évite les pb RLS sur select après insert)
-    await loadEvents();
-    closeForm();
-    setSaving(false);
   }
 
   async function handleDelete(id: string) {
-    await supabase.from("main_courante").delete().eq("id", id);
-    setEvents((prev) => prev.filter((e) => e.id !== id));
-    setConfirmDeleteId(null);
+    try {
+      const { error } = await supabase.from("main_courante").delete().eq("id", id);
+      if (error) { console.error("[MainCourante] Erreur suppression:", error); return; }
+      setEvents((prev) => prev.filter((e) => e.id !== id));
+    } catch (error) {
+      console.error("[MainCourante] Erreur suppression:", error);
+    } finally {
+      setConfirmDeleteId(null);
+    }
   }
 
   function handlePrint() {

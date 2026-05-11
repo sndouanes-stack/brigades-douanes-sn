@@ -11,19 +11,17 @@ export function useUserProfile() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Session initiale
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-        setSessionCookie(session.access_token);
-        loadProfile(session.user.id);
-      } else {
-        setLoading(false);
+    // Utilise uniquement onAuthStateChange (l'événement INITIAL_SESSION remplace getSession).
+    // Cela évite le double-appel à loadProfile qui causait des re-renders excessifs et
+    // le clignotement des images dans les sidebars.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // TOKEN_REFRESHED : on renouvelle juste le cookie session, sans recharger le profil
+      // (évite un re-render inutile toutes les ~55 min).
+      if (event === "TOKEN_REFRESHED") {
+        if (session) setSessionCookie(session.access_token);
+        return;
       }
-    });
 
-    // 2. Changements d'état auth (connexion / déconnexion / refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser && session) {

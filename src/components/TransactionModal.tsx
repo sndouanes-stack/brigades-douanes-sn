@@ -44,21 +44,41 @@ export default function TransactionModal({ type, onClose, onSaved }: Props) {
     setSaving(true);
     setError("");
     try {
+      // Récupérer l'utilisateur connecté
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Non authentifié");
+
+      // Récupérer le profil pour avoir brigade_id
+      const { data: profile } = await supabase
+        .from("users")
+        .select("brigade_id")
+        .eq("id", user.id)
+        .single();
+
       const payload = {
         type,
         montant: montantNum,
-        motif: motif.trim(),
+        libelle: motif.trim(),   // ← colonne correcte dans Supabase
         date,
+        brigade_id: profile?.brigade_id ?? null,
+        created_by: user.id,
       };
+
       const { data, error: dbError } = await supabase
         .from("transactions")
         .insert(payload)
         .select()
         .single();
-      if (dbError) throw dbError;
-      onSaved({ ...payload, id: data.id });
+
+      if (dbError) {
+        console.error("[TransactionModal] Erreur Supabase:", dbError);
+        throw dbError;
+      }
+
+      onSaved({ type, montant: montantNum, motif: motif.trim(), date, id: data.id });
       onClose();
-    } catch {
+    } catch (err) {
+      console.error("[TransactionModal] Erreur sauvegarde:", err);
       setError("Erreur lors de la sauvegarde. Vérifiez votre connexion.");
     } finally {
       setSaving(false);
@@ -70,7 +90,6 @@ export default function TransactionModal({ type, onClose, onSaved }: Props) {
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        {/* Header */}
         <div className={`px-6 py-5 flex items-center justify-between ${isRecette ? "bg-[#4A5C2F]" : "bg-red-700"}`}>
           <div className="flex items-center gap-3">
             <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isRecette ? "bg-[#C9A84C]" : "bg-red-200"}`}>
@@ -98,72 +117,42 @@ export default function TransactionModal({ type, onClose, onSaved }: Props) {
           </button>
         </div>
 
-        {/* Formulaire */}
         <form onSubmit={handleSubmit} className="px-6 py-6 space-y-5">
-          {/* Montant */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Montant (FCFA)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Montant (FCFA)</label>
             <div className="relative">
-              <input
-                type="text"
-                inputMode="numeric"
-                required
-                value={montant}
-                onChange={(e) => setMontant(e.target.value)}
-                placeholder="0"
+              <input type="text" inputMode="numeric" required value={montant}
+                onChange={(e) => setMontant(e.target.value)} placeholder="0"
                 className={`w-full px-4 py-3 pr-16 rounded-lg border text-gray-900 text-lg font-bold
                   placeholder-gray-300 focus:outline-none focus:ring-2 focus:border-transparent transition-all
-                  ${isRecette ? "focus:ring-[#4A5C2F] border-gray-300" : "focus:ring-red-500 border-gray-300"}`}
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-400">
-                FCFA
-              </span>
+                  ${isRecette ? "focus:ring-[#4A5C2F] border-gray-300" : "focus:ring-red-500 border-gray-300"}`} />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-400">FCFA</span>
             </div>
           </div>
 
-          {/* Motif */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Motif
-            </label>
-            <input
-              type="text"
-              required
-              value={motif}
-              onChange={(e) => setMotif(e.target.value)}
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Motif</label>
+            <input type="text" required value={motif} onChange={(e) => setMotif(e.target.value)}
               placeholder={isRecette ? "ex: Recouvrement de droits" : "ex: Achat fournitures"}
               className={`w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900
                 placeholder-gray-400 text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all
-                ${isRecette ? "focus:ring-[#4A5C2F]" : "focus:ring-red-500"}`}
-            />
+                ${isRecette ? "focus:ring-[#4A5C2F]" : "focus:ring-red-500"}`} />
           </div>
 
-          {/* Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Date
-            </label>
-            <input
-              type="date"
-              required
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
+            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)}
               className={`w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900
                 text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all
-                ${isRecette ? "focus:ring-[#4A5C2F]" : "focus:ring-red-500"}`}
-            />
+                ${isRecette ? "focus:ring-[#4A5C2F]" : "focus:ring-red-500"}`} />
           </div>
 
-          {/* Erreur */}
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
               <p className="text-red-600 text-sm">{error}</p>
             </div>
           )}
 
-          {/* Actions */}
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose}
               className="flex-1 px-4 py-2.5 text-sm text-gray-600 bg-white border border-gray-200
@@ -173,9 +162,7 @@ export default function TransactionModal({ type, onClose, onSaved }: Props) {
             <button type="submit" disabled={saving}
               className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-lg
                 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2
-                ${isRecette
-                  ? "bg-[#4A5C2F] hover:bg-[#3b4a25]"
-                  : "bg-red-600 hover:bg-red-700"}`}>
+                ${isRecette ? "bg-[#4A5C2F] hover:bg-[#3b4a25]" : "bg-red-600 hover:bg-red-700"}`}>
               {saving ? (
                 <>
                   <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -190,7 +177,7 @@ export default function TransactionModal({ type, onClose, onSaved }: Props) {
                     viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
-                  Enregistrer
+                  Économiser
                 </>
               )}
             </button>

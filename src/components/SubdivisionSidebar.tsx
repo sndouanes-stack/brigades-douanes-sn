@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -99,7 +100,9 @@ const NAV_ITEMS = [
   },
 ];
 
-export default function SubdivisionSidebar() {
+const LOGO_STYLE: React.CSSProperties = { objectFit: "contain", flexShrink: 0 };
+
+function SubdivisionSidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -116,24 +119,7 @@ export default function SubdivisionSidebar() {
   }
 
   return (
-    <aside className="w-64 shrink-0 min-h-screen bg-[#4A5C2F] flex flex-col shadow-xl">
-
-      {/* Logo */}
-      <div className="px-6 py-7 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/images/logo-douanes.png"
-            alt="Logo Douanes SN"
-            style={{ width: 50, height: 50, objectFit: "contain", flexShrink: 0 }}
-          />
-          <div>
-            <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
-            <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Subdivision</p>
-          </div>
-        </div>
-      </div>
-
+    <>
       {/* Subdivision name */}
       {subdivision && (
         <div className="px-6 py-3 border-b border-white/10 bg-white/5">
@@ -190,6 +176,38 @@ export default function SubdivisionSidebar() {
           DGD Sénégal © {new Date().getFullYear()}
         </p>
       </div>
-    </aside>
+    </>
   );
 }
+
+const SubdivisionSidebar = memo(function SubdivisionSidebar() {
+  return (
+    <aside className="w-64 shrink-0 min-h-screen bg-[#4A5C2F] flex flex-col shadow-xl">
+
+      {/* Logo — outside Suspense so it never disappears on navigation */}
+      <div className="px-6 py-7 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/logo-douanes.png"
+            alt="Logo Douanes SN"
+            width={50}
+            height={50}
+            style={LOGO_STYLE}
+          />
+          <div>
+            <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
+            <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Subdivision</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav (uses useSearchParams) — inside Suspense */}
+      <Suspense fallback={<div className="flex-1" />}>
+        <SubdivisionSidebarNav />
+      </Suspense>
+    </aside>
+  );
+});
+
+export default SubdivisionSidebar;

@@ -11,15 +11,19 @@ export type StatutCourrier =
 
 export interface Courrier {
   id?: string;
-  numero: string;
   type: TypeCourrier;
   date: string;
-  interlocuteur: string;
-  structure: string;
   objet: string;
-  urgence: Urgence;
   statut: StatutCourrier;
-  observations: string;
+  // Colonnes réelles en DB
+  expediteur?: string;
+  destinataire?: string;
+  // Champs UI uniquement (non persistés en DB)
+  numero?: string;
+  interlocuteur?: string;
+  structure?: string;
+  urgence?: Urgence;
+  observations?: string;
 }
 
 export const STATUTS_ARRIVEE: StatutCourrier[] = ["En attente", "En cours", "Traité"];
@@ -62,16 +66,15 @@ export default function CourrierModal({
     setSaving(true);
     setError("");
     try {
+      // Seules les colonnes qui existent dans la table correspondances
       const payload = {
-        numero:        editingCourrier?.numero ?? nextNumero,
         type,
         date,
-        interlocuteur: interlocuteur.trim(),
-        structure:     structure.trim(),
-        objet:         objet.trim(),
-        urgence,
+        objet:        objet.trim(),
         statut,
-        observations:  observations.trim(),
+        // interlocuteur → expediteur (arrivée) ou destinataire (départ)
+        expediteur:   isArrivee ? interlocuteur.trim() : "",
+        destinataire: isArrivee ? "" : interlocuteur.trim(),
       };
 
       const isSeed = editingCourrier?.id?.startsWith("s");
@@ -92,7 +95,8 @@ export default function CourrierModal({
         onSaved({ ...payload, id: data.id });
       }
       onClose();
-    } catch {
+    } catch (error) {
+      console.error("[CourrierModal] Erreur sauvegarde:", error);
       setError("Erreur lors de la sauvegarde. Vérifiez votre connexion.");
     } finally {
       setSaving(false);
