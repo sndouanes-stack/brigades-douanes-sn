@@ -114,12 +114,24 @@ function AgentPageContent() {
     if (!profile?.matricule) { setStatutLoading(false); return; }
     async function fetchStatut() {
       try {
-        let q = supabase.from("montages").select("id, statuts").eq("date", today);
-        if (profile?.brigadeId) q = q.eq("brigade_id", profile.brigadeId);
-        const { data } = await q.limit(1);
-        if (data && data.length > 0 && profile?.matricule) {
-          setMontageId(data[0].id ?? null);
-          const s = data[0].statuts?.[profile.matricule] as Statut | undefined;
+        // 1. Essai avec filtre brigade_id (cas normal)
+        // 2. Fallback sans filtre (si montage créé sans brigade_id ou format différent)
+        const { data: allRows } = await supabase
+          .from("montages")
+          .select("id, statuts, brigade_id")
+          .eq("date", today);
+
+        const rows = allRows ?? [];
+        // Préférer le montage qui correspond à la brigade de l'agent
+        const montage =
+          (profile?.brigadeId
+            ? rows.find((r) => r.brigade_id === profile.brigadeId)
+            : undefined) ?? rows[0];
+
+        if (montage && profile?.matricule) {
+          setMontageId(montage.id ?? null);
+          const statuts = montage.statuts as Record<string, string> | null;
+          const s = statuts?.[profile.matricule] as Statut | undefined;
           if (s) setStatut(s);
         }
       } catch {
@@ -140,9 +152,17 @@ function AgentPageContent() {
         .select("statuts")
         .eq("id", montageId)
         .single();
-      const merged = { ...(current?.statuts ?? {}), [profile.matricule]: newStatut };
-      await supabase.from("montages").update({ statuts: merged }).eq("id", montageId);
-      setStatut(newStatut);
+      // Accès sécurisé au JSONB (peut être null ou tout type JSON)
+      const existingStatuts: Record<string, string> =
+        current?.statuts && typeof current.statuts === "object" && !Array.isArray(current.statuts)
+          ? (current.statuts as Record<string, string>)
+          : {};
+      const merged = { ...existingStatuts, [profile.matricule]: newStatut };
+      const { error: updateErr } = await supabase
+        .from("montages")
+        .update({ statuts: merged })
+        .eq("id", montageId);
+      if (!updateErr) setStatut(newStatut);
     } catch {
       // Erreur silencieuse
     } finally {
@@ -239,15 +259,20 @@ function AgentPageContent() {
     if (!profile?.brigadeId) { setAgentsLoading(false); return; }
     (async () => {
       try {
-        const [agentsRes, montageRes] = await Promise.all([
+        const [agentsRes, montageAllRes] = await Promise.all([
           supabase.from("agents").select("*").eq("brigade_id", profile.brigadeId),
-          supabase.from("montages").select("statuts")
-            .eq("brigade_id", profile.brigadeId).eq("date", today).limit(1),
+          supabase.from("montages").select("statuts, brigade_id").eq("date", today),
         ]);
         const list = ((agentsRes.data ?? []) as BrigadeAgent[]);
         list.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
         setBrigadeAgents(list);
-        const rawStatuts = montageRes.data?.[0]?.statuts;
+        // Même logique de fallback que pour fetchStatut
+        const montageRows = montageAllRes.data ?? [];
+        const montage =
+          (profile?.brigadeId
+            ? montageRows.find((r) => r.brigade_id === profile.brigadeId)
+            : undefined) ?? montageRows[0];
+        const rawStatuts = montage?.statuts;
         const statuts = (rawStatuts && typeof rawStatuts === "object" && !Array.isArray(rawStatuts))
           ? (rawStatuts as Record<string, string>)
           : {};
