@@ -835,10 +835,10 @@ export default function SaisiesPage() {
     setSaving(true);
     const payload = {
       date: form.date, heure: form.heure,
-      nature: form.nature.trim(), description: form.description.trim(),
+      nature_infraction: form.nature.trim(), description: form.description.trim(),
       quantite: form.quantite.trim(), unite: form.unite,
-      valeur: parseFloat(form.valeur) || 0,
-      lieu: form.lieu.trim(), proprietaire: form.proprietaire.trim(),
+      valeur_marchandises: parseFloat(form.valeur) || 0,
+      lieu: form.lieu.trim(), contrevenant: form.proprietaire.trim(),
       numeroPV: form.numeroPV.trim(), agent: form.agent.trim(),
       observations: form.observations.trim(), statut: form.statut,
     };
