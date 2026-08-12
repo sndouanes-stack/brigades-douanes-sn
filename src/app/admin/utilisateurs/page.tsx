@@ -66,11 +66,18 @@ export default function AdminUtilisateursPage() {
 
   // Edit modal
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
-  const [editForm, setEditForm] = useState<Omit<FormState, "email" | "password">>({
-    nom: "", prenom: "", role: "AGENT", brigadeId: "", subdivisionId: "", regionId: "", directionRegionaleId: "", matricule: "",
+  const [editForm, setEditForm] = useState<Omit<FormState, "email" | "password"> & { newPassword: string }>({
+    nom: "", prenom: "", role: "AGENT", brigadeId: "", subdivisionId: "", regionId: "", directionRegionaleId: "", matricule: "", newPassword: "",
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
+
+  // Quick password modal
+  const [passwordUser, setPasswordUser] = useState<UserProfile | null>(null);
+  const [quickPassword, setQuickPassword] = useState("");
+  const [quickPwdSaving, setQuickPwdSaving] = useState(false);
+  const [quickPwdError, setQuickPwdError] = useState("");
+  const [quickPwdSuccess, setQuickPwdSuccess] = useState("");
 
   const [search, setSearch] = useState("");
 
@@ -220,6 +227,7 @@ export default function AdminUtilisateursPage() {
       regionId: user.regionId ?? "",
       directionRegionaleId: user.directionRegionaleId ?? "",
       matricule: user.matricule ?? "",
+      newPassword: "",
     });
     setEditError("");
   }
@@ -267,31 +275,79 @@ export default function AdminUtilisateursPage() {
 
     setEditSaving(true);
     try {
-      const updates = {
-        nom: editForm.nom.trim(),
-        prenom: editForm.prenom.trim(),
-        role: editForm.role,
-        brigade_id: editForm.brigadeId || null,
-        subdivision_id: editForm.subdivisionId || null,
-        direction_regionale_id: editForm.directionRegionaleId || null,
-        matricule: editForm.matricule.trim() || null,
-      };
-      await supabase.from("users").update(updates).eq("id", editingUser.uid);
+      const res = await fetch("/api/admin/update-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid: editingUser.uid,
+          nom: editForm.nom.trim(),
+          prenom: editForm.prenom.trim(),
+          role: editForm.role,
+          brigade_id: editForm.brigadeId || null,
+          subdivision_id: editForm.subdivisionId || null,
+          direction_regionale_id: editForm.directionRegionaleId || null,
+          matricule: editForm.matricule.trim() || null,
+          password: editForm.newPassword.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Erreur lors de la mise à jour.");
+
       setUsers((prev) =>
         prev.map((u) => u.uid === editingUser.uid ? {
           ...u,
-          nom: updates.nom, prenom: updates.prenom, role: updates.role,
-          brigadeId: updates.brigade_id ?? undefined,
-          subdivisionId: updates.subdivision_id ?? undefined,
-          directionRegionaleId: updates.direction_regionale_id ?? undefined,
-          matricule: updates.matricule ?? undefined,
+          nom: editForm.nom.trim(), prenom: editForm.prenom.trim(), role: editForm.role,
+          brigadeId: editForm.brigadeId || undefined,
+          subdivisionId: editForm.subdivisionId || undefined,
+          directionRegionaleId: editForm.directionRegionaleId || undefined,
+          matricule: editForm.matricule.trim() || undefined,
         } : u)
       );
       setEditingUser(null);
-    } catch {
-      setEditError("Erreur lors de la mise à jour.");
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Erreur lors de la mise à jour.");
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  // ── Quick password change modal handlers ──────────────────────────────────
+  function openPasswordModal(user: UserProfile) {
+    setPasswordUser(user);
+    const pwd = generatePassword();
+    setQuickPassword(pwd);
+    setQuickPwdError("");
+    setQuickPwdSuccess("");
+  }
+
+  async function handleQuickPasswordSave() {
+    if (!passwordUser) return;
+    setQuickPwdError("");
+    setQuickPwdSuccess("");
+    if (!quickPassword || quickPassword.trim().length < 6) {
+      setQuickPwdError("Le mot de passe doit contenir au moins 6 caractères.");
+      return;
+    }
+    setQuickPwdSaving(true);
+    try {
+      const res = await fetch("/api/admin/update-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uid: passwordUser.uid,
+          password: quickPassword.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Erreur lors du changement de mot de passe.");
+      setQuickPwdSuccess("Mot de passe mis à jour avec succès !");
+      setTimeout(() => {
+        setPasswordUser(null);
+      }, 1800);
+    } catch (err) {
+      setQuickPwdError(err instanceof Error ? err.message : "Erreur lors du changement de mot de passe.");
+    } finally {
+      setQuickPwdSaving(false);
     }
   }
 
@@ -556,10 +612,22 @@ export default function AdminUtilisateursPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
+                        {/* Changer mot de passe */}
+                        <button
+                          onClick={() => openPasswordModal(user)}
+                          title="Changer le mot de passe"
+                          className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round"
+                              d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                          </svg>
+                        </button>
                         {/* Modifier */}
                         <button
                           onClick={() => openEdit(user)}
-                          title="Modifier"
+                          title="Modifier les informations"
                           className="p-1.5 text-gray-400 hover:text-[#4A5C2F] hover:bg-[#4A5C2F]/10 rounded-lg transition-colors"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
@@ -798,6 +866,33 @@ export default function AdminUtilisateursPage() {
                   className={inputCls + " bg-gray-50 text-gray-400 cursor-not-allowed"} />
               </div>
 
+              {/* Changer le mot de passe (optionnel) */}
+              <div className="pt-2 border-t border-gray-100">
+                <label className={labelCls}>Changer le mot de passe (optionnel)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={editForm.newPassword}
+                    onChange={(e) => handleEditChange("newPassword", e.target.value)}
+                    placeholder="Laissez vide pour conserver le mot de passe actuel"
+                    className={inputCls + " font-mono flex-1 text-xs"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleEditChange("newPassword", generatePassword())}
+                    title="Générer un mot de passe aléatoire"
+                    className="px-3 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-[#4A5C2F] text-xs font-semibold whitespace-nowrap"
+                  >
+                    Générer
+                  </button>
+                </div>
+                {editForm.newPassword && (
+                  <p className="text-xs text-[#4A5C2F] font-semibold mt-1">
+                    Nouveau mot de passe prêt à être enregistré.
+                  </p>
+                )}
+              </div>
+
               {/* Matricule */}
               {showMatricule(editForm.role) && (
                 <div>
@@ -841,6 +936,85 @@ export default function AdminUtilisateursPage() {
                   </>
                 ) : "Enregistrer les modifications"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Changement Rapide de Mot de Passe ──────────────────────────────── */}
+      {passwordUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setPasswordUser(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="bg-[#4A5C2F] px-6 py-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#C9A84C] flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-[#4A5C2F]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-base">Changer le mot de passe</h3>
+                  <p className="text-xs text-[#C9A84C]">{passwordUser.prenom} <span className="uppercase">{passwordUser.nom}</span></p>
+                </div>
+              </div>
+              <button onClick={() => setPasswordUser(null)} className="text-white/60 hover:text-white p-1.5 rounded-lg hover:bg-white/10">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-6 py-6 space-y-4">
+              <div>
+                <label className={labelCls}>Email de l&apos;utilisateur</label>
+                <input value={passwordUser.email} readOnly className={inputCls + " bg-gray-50 text-gray-500 cursor-not-allowed"} />
+              </div>
+
+              <div>
+                <label className={labelCls}>Nouveau mot de passe *</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={quickPassword}
+                    onChange={(e) => setQuickPassword(e.target.value)}
+                    placeholder="Au moins 6 caractères"
+                    className={inputCls + " font-mono flex-1"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setQuickPassword(generatePassword())}
+                    className="px-3 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-[#4A5C2F] text-xs font-semibold whitespace-nowrap"
+                  >
+                    Générer
+                  </button>
+                </div>
+              </div>
+
+              {quickPwdError && (
+                <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg border border-red-100">{quickPwdError}</p>
+              )}
+
+              {quickPwdSuccess && (
+                <p className="text-green-700 text-sm bg-green-50 px-3 py-2 rounded-lg border border-green-200 font-semibold">{quickPwdSuccess}</p>
+              )}
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+                <button
+                  onClick={() => setPasswordUser(null)}
+                  className="px-5 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-100"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleQuickPasswordSave}
+                  disabled={quickPwdSaving}
+                  className="px-6 py-2 text-sm font-semibold text-white bg-[#4A5C2F] hover:bg-[#3b4a25] rounded-lg transition-colors disabled:opacity-60 flex items-center gap-2"
+                >
+                  {quickPwdSaving ? "Enregistrement…" : "Changer le mot de passe"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

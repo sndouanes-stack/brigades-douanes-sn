@@ -1,11 +1,11 @@
 "use client";
 
-import { memo, Suspense } from "react";
+import { memo, useState, Suspense } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useUserProfile } from "@/lib/useUserProfile";
 import { DIRECTIONS_REGIONALES } from "@/lib/roles";
+import { logout } from "@/lib/logout";
 
 const NAV_ITEMS = [
   {
@@ -113,40 +113,31 @@ const NAV_ITEMS = [
 
 const LOGO_STYLE: React.CSSProperties = { objectFit: "contain", flexShrink: 0 };
 
-function RegionSidebarNav() {
+function RegionSidebarNav({ onItemClick }: { onItemClick?: () => void }) {
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { profile } = useUserProfile();
 
   const currentVue = searchParams.get("vue") ?? "dashboard";
   const direction = DIRECTIONS_REGIONALES.find((d) => d.id === profile?.directionRegionaleId);
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    document.cookie = "session=; path=/; max-age=0";
-    document.cookie = "role=; path=/; max-age=0";
-    router.push("/login");
-  }
-
   return (
     <>
-      {/* Direction name */}
       {direction && (
         <div className="px-6 py-3 border-b border-white/10 bg-white/5">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-0.5">Directeur Régional</p>
-          <p className="text-white text-xs font-semibold leading-tight">{direction.nom}</p>
+          <p className="text-white text-xs font-semibold leading-tight truncate">{direction.nom}</p>
         </div>
       )}
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-5 space-y-1">
+      <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
           const isActive = pathname === "/region" && currentVue === item.vue;
           return (
             <Link
               key={item.vue}
               href={`/region?vue=${item.vue}`}
+              onClick={onItemClick}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150 group
                 ${isActive
                   ? "bg-[#C9A84C] text-[#4A5C2F] shadow-md"
@@ -162,8 +153,7 @@ function RegionSidebarNav() {
         })}
       </nav>
 
-      {/* User + logout */}
-      <div className="px-4 py-4 border-t border-white/10">
+      <div className="px-4 py-4 border-t border-white/10 shrink-0">
         {profile && (
           <div className="px-2 mb-3">
             <p className="text-white text-xs font-semibold truncate">
@@ -173,7 +163,7 @@ function RegionSidebarNav() {
           </div>
         )}
         <button
-          onClick={handleLogout}
+          onClick={logout}
           className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl text-white/60 hover:bg-white/10 hover:text-white text-xs font-medium transition-all"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
@@ -192,32 +182,74 @@ function RegionSidebarNav() {
 }
 
 const RegionSidebar = memo(function RegionSidebar() {
-  return (
-    <aside className="w-64 shrink-0 min-h-screen bg-[#4A5C2F] flex flex-col shadow-xl">
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-      {/* Logo — outside Suspense so it never disappears on navigation */}
-      <div className="px-6 py-7 border-b border-white/10">
-        <div className="flex items-center gap-3">
+  return (
+    <>
+      {/* Mobile Top Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-30 bg-[#4A5C2F] px-4 py-3 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/images/logo-douanes.png"
-            alt="Logo Douanes SN"
-            width={50}
-            height={50}
-            style={LOGO_STYLE}
-          />
+          <img src="/images/logo-douanes.png" alt="Logo" width={36} height={36} style={LOGO_STYLE} />
           <div>
-            <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
-            <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Direction Rég.</p>
+            <p className="text-white font-bold text-xs leading-tight">Douanes SN</p>
+            <p className="text-[#C9A84C] text-[10px] tracking-widest uppercase">Direction Rég.</p>
           </div>
         </div>
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className="text-white p-2 rounded-lg hover:bg-white/10 transition-colors"
+          aria-label="Menu Mobile"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            {mobileOpen ? (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            )}
+          </svg>
+        </button>
       </div>
 
-      {/* Nav (uses useSearchParams) — inside Suspense */}
-      <Suspense fallback={<div className="flex-1" />}>
-        <RegionSidebarNav />
-      </Suspense>
-    </aside>
+      {/* Backdrop for Mobile */}
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-black/50 md:hidden transition-opacity"
+        />
+      )}
+
+      {/* Sidebar Drawer */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#4A5C2F] flex flex-col shadow-xl transition-transform duration-200 ease-in-out md:relative md:translate-x-0 ${
+        mobileOpen ? "translate-x-0" : "-translate-x-full"
+      }`}>
+
+        {/* Logo */}
+        <div className="px-6 py-6 border-b border-white/10 shrink-0 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/images/logo-douanes.png" alt="Logo" width={44} height={44} style={LOGO_STYLE} />
+            <div>
+              <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
+              <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Direction Rég.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="md:hidden text-white/60 hover:text-white p-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Nav */}
+        <Suspense fallback={<div className="flex-1" />}>
+          <RegionSidebarNav onItemClick={() => setMobileOpen(false)} />
+        </Suspense>
+      </aside>
+    </>
   );
 });
 

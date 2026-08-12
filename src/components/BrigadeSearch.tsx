@@ -16,8 +16,19 @@ interface BrigadeItem {
 function subdivNomFn(subdivisions: { id: string; nom: string }[], id?: string) {
   return subdivisions.find((s) => s.id === id)?.nom ?? "—";
 }
-function dirNomFn(id?: string) {
-  return DIRECTIONS_REGIONALES.find((d) => d.id === id)?.nom ?? "—";
+function dirNomFn(brigade: BrigadeItem) {
+  if (brigade.direction_regionale_id) {
+    const dr = DIRECTIONS_REGIONALES.find((d) => d.id === brigade.direction_regionale_id);
+    if (dr) return dr.nom;
+  }
+  if (brigade.subdivision_id) {
+    const staticSub = SUBDIVISIONS.find((s) => s.id === brigade.subdivision_id);
+    if (staticSub?.directionRegionaleId) {
+      const dr = DIRECTIONS_REGIONALES.find((d) => d.id === staticSub.directionRegionaleId);
+      if (dr) return dr.nom;
+    }
+  }
+  return "—";
 }
 
 export default function BrigadeSearch() {
@@ -52,7 +63,7 @@ export default function BrigadeSearch() {
     ? []
     : brigades.filter((b) => {
         const sub = subdivNomFn(subdivisions, b.subdivision_id).toLowerCase();
-        const dr = dirNomFn(b.direction_regionale_id).toLowerCase();
+        const dr = dirNomFn(b).toLowerCase();
         return (
           b.nom.toLowerCase().includes(q) ||
           sub.includes(q) ||
@@ -118,7 +129,7 @@ export default function BrigadeSearch() {
                       <p className="font-semibold text-sm text-gray-800 truncate">{b.nom}</p>
                       <p className="text-xs text-gray-400 truncate">
                         {subdivNomFn(subdivisions, b.subdivision_id)}
-                        {b.direction_regionale_id && ` · ${dirNomFn(b.direction_regionale_id)}`}
+                        {dirNomFn(b) !== "—" && ` · ${dirNomFn(b)}`}
                       </p>
                     </div>
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-300 ml-auto shrink-0"
@@ -174,7 +185,7 @@ export default function BrigadeSearch() {
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Direction Régionale</p>
               <span className="inline-block text-xs bg-[#4A5C2F]/10 text-[#4A5C2F] px-2.5 py-1 rounded-full font-medium">
-                {dirNomFn(selected.direction_regionale_id)}
+                {dirNomFn(selected)}
               </span>
             </div>
             <div>

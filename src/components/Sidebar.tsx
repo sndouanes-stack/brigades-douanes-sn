@@ -1,13 +1,13 @@
 "use client";
 
-import { memo, Suspense } from "react";
+import { memo, useState, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useUserProfile } from "@/lib/useUserProfile";
+import { logout } from "@/lib/logout";
 
 // ── Constantes stable (module-level) ──────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const NAV_ITEMS_AGENT: { label: string; href: string; tab: string | null; icon: React.ReactNode }[] = [
   {
     label: "Tableau de bord",
@@ -166,12 +166,9 @@ const NAV_ITEMS: { label: string; href: string; icon: React.ReactNode }[] = [
   },
 ];
 
-// ── Style stable pour le logo ─────────────────────────────────────────────────
 const LOGO_STYLE: React.CSSProperties = { objectFit: "contain", flexShrink: 0 };
 
-// ── Partie dynamique (useSearchParams nécessite Suspense) ─────────────────────
-
-function SidebarNav() {
+function SidebarNav({ onItemClick }: { onItemClick?: () => void }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { profile } = useUserProfile();
@@ -185,7 +182,7 @@ function SidebarNav() {
   return (
     <>
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-5 space-y-1">
+      <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
         {visibleNavItems.map((item) => {
           const isActive = isAgent && "tab" in item
             ? pathname === "/agent" && currentTab === item.tab
@@ -194,6 +191,7 @@ function SidebarNav() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onItemClick}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150 group
                 ${isActive
                   ? "bg-[#C9A84C] text-[#4A5C2F] shadow-md"
@@ -216,6 +214,7 @@ function SidebarNav() {
             <p className="text-white/30 text-xs uppercase tracking-widest px-4 mb-1">Admin</p>
             <Link
               href="/admin/utilisateurs"
+              onClick={onItemClick}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150 group
                 ${pathname === "/admin/utilisateurs"
                   ? "bg-[#C9A84C] text-[#4A5C2F] shadow-md"
@@ -233,6 +232,7 @@ function SidebarNav() {
             </Link>
             <Link
               href="/admin/structure"
+              onClick={onItemClick}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150 group
                 ${pathname === "/admin/structure"
                   ? "bg-[#C9A84C] text-[#4A5C2F] shadow-md"
@@ -253,6 +253,32 @@ function SidebarNav() {
           </div>
         </div>
       )}
+
+      {/* User Info + Logout button */}
+      <div className="px-4 py-4 border-t border-white/10 shrink-0">
+        {profile && (
+          <div className="px-2 mb-3">
+            <p className="text-white text-xs font-semibold truncate">
+              {profile.prenom} <span className="uppercase">{profile.nom}</span>
+            </p>
+            <p className="text-white/40 text-xs truncate">{profile.email}</p>
+          </div>
+        )}
+        <button
+          onClick={logout}
+          className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl text-white/60 hover:bg-white/10 hover:text-white text-xs font-medium transition-all"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+            viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          Déconnexion
+        </button>
+        <p className="text-white/20 text-xs text-center mt-3" suppressHydrationWarning>
+          DGD Sénégal © {new Date().getFullYear()}
+        </p>
+      </div>
     </>
   );
 }
@@ -260,39 +286,92 @@ function SidebarNav() {
 // ── Composant exporté ─────────────────────────────────────────────────────────
 
 const Sidebar = memo(function Sidebar() {
-  return (
-    <aside className="w-64 shrink-0 min-h-screen bg-[#4A5C2F] flex flex-col shadow-xl">
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-      {/* Logo — HORS du Suspense pour ne jamais disparaître lors des re-renders */}
-      <div className="px-6 py-7 border-b border-white/10">
-        <div className="flex items-center gap-3">
+  return (
+    <>
+      {/* Mobile Top Bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-30 bg-[#4A5C2F] px-4 py-3 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/images/logo-douanes.png"
-            alt="Logo Douanes SN"
-            width={50}
-            height={50}
-            style={LOGO_STYLE}
-          />
+          <img src="/images/logo-douanes.png" alt="Logo" width={36} height={36} style={LOGO_STYLE} />
           <div>
-            <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
-            <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Brigades</p>
+            <p className="text-white font-bold text-xs leading-tight">Douanes SN</p>
+            <p className="text-[#C9A84C] text-[10px] tracking-widest uppercase">Brigades</p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={logout}
+            className="flex items-center gap-1.5 text-xs text-white/90 hover:text-white bg-white/10 hover:bg-red-500/20 border border-white/20 px-2.5 py-1.5 rounded-lg transition-all"
+            title="Déconnexion"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span className="text-xs font-medium">Déconnexion</span>
+          </button>
+          <button
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+            aria-label="Menu Mobile"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              {mobileOpen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              )}
+            </svg>
+          </button>
         </div>
       </div>
 
-      {/* Navigation + Admin — dans Suspense car useSearchParams l'exige */}
-      <Suspense fallback={<div className="flex-1" />}>
-        <SidebarNav />
-      </Suspense>
+      {/* Mobile Backdrop */}
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-black/50 md:hidden transition-opacity"
+        />
+      )}
 
-      {/* Footer */}
-      <div className="px-6 py-4 border-t border-white/10">
-        <p className="text-white/30 text-xs text-center" suppressHydrationWarning>
-          DGD Sénégal © {new Date().getFullYear()}
-        </p>
-      </div>
-    </aside>
+      {/* Drawer Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#4A5C2F] flex flex-col shadow-xl transition-transform duration-200 ease-in-out md:relative md:translate-x-0 ${
+        mobileOpen ? "translate-x-0" : "-translate-x-full"
+      }`}>
+
+        {/* Logo */}
+        <div className="px-6 py-6 border-b border-white/10 shrink-0 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/logo-douanes.png"
+              alt="Logo Douanes SN"
+              width={44}
+              height={44}
+              style={LOGO_STYLE}
+            />
+            <div>
+              <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
+              <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Brigades</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="md:hidden text-white/60 hover:text-white p-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Navigation + Admin */}
+        <Suspense fallback={<div className="flex-1" />}>
+          <SidebarNav onItemClick={() => setMobileOpen(false)} />
+        </Suspense>
+      </aside>
+    </>
   );
 });
 

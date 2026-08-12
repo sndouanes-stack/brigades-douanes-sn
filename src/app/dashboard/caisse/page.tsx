@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/lib/useUserProfile";
@@ -32,28 +32,42 @@ export default function CaissePage() {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 
+  // Filtre de période historique
+  const [datePeriod, setDatePeriod] = useState<"all" | "today" | "month" | "custom">("all");
+  const [selectedCustomDate, setSelectedCustomDate] = useState<string>(today);
+
   // Auth guard
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [user, loading, router]);
 
-  // Charger les transactions du jour depuis Supabase
+  // Charger les transactions depuis Supabase
   const fetchTransactions = useCallback(async () => {
     if (!user) return;
     setLoadingTx(true);
     try {
-      const { data } = await supabase
+      let query = supabase
         .from("transactions")
         .select("*")
-        .eq("date", today)
         .order("created_at", { ascending: false });
-      setTransactions((data ?? []) as Transaction[]);
+
+      if (profile?.brigadeId) {
+        query = query.eq("brigade_id", profile.brigadeId);
+      }
+
+      const { data, error } = await query;
+      if (error) console.error("fetchTransactions error:", error);
+
+      setTransactions((data ?? []).map((d) => ({
+        ...d,
+        motif: (d as Record<string, unknown>).libelle as string ?? (d as Record<string, unknown>).motif as string ?? "",
+      })) as Transaction[]);
     } catch {
       // Supabase non accessible
     } finally {
       setLoadingTx(false);
     }
-  }, [user, today]);
+  }, [user, profile?.brigadeId]);
 
   useEffect(() => {
     fetchTransactions();
@@ -62,6 +76,31 @@ export default function CaissePage() {
   function handleSaved(tx: Transaction) {
     setTransactions((prev) => [tx, ...prev.filter((t) => t.id !== tx.id)]);
   }
+
+  // Filtrage par période historique
+  const filteredByDate = useMemo(() => {
+    if (datePeriod === "today") {
+      return transactions.filter((t) => t.date === today);
+    }
+    if (datePeriod === "month") {
+      const currentMonth = today.slice(0, 7);
+      return transactions.filter((t) => (t.date ?? "").startsWith(currentMonth));
+    }
+    if (datePeriod === "custom") {
+      return transactions.filter((t) => t.date === selectedCustomDate);
+    }
+    // 'all' : historique complet
+    return transactions;
+  }, [transactions, datePeriod, selectedCustomDate, today]);
+
+  const periodLabel = useMemo(() => {
+    if (datePeriod === "today") return `du jour (${todayLabel})`;
+    if (datePeriod === "month") return "de ce mois-ci";
+    if (datePeriod === "custom") {
+      return `du ${new Date(selectedCustomDate).toLocaleDateString("fr-SN", { day: "numeric", month: "long", year: "numeric" })}`;
+    }
+    return "historique complet (toutes les dates)";
+  }, [datePeriod, selectedCustomDate, todayLabel]);
 
   function handlePrint() {
     const logoUrl = window.location.origin + "/images/logo-douanes.png";
@@ -77,9 +116,6 @@ export default function CaissePage() {
       ? (DIRECTIONS_REGIONALES.find((d) => d.id === profile.directionRegionaleId)?.nom ?? "")
       : "";
     const chefName = profile ? `${profile.prenom ?? ""} ${profile.nom ?? ""}`.trim() : "";
-    const dateLabel = new Date().toLocaleDateString("fr-SN", {
-      weekday: "long", day: "numeric", month: "long", year: "numeric",
-    });
 
     const FLAG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="48" viewBox="0 0 90 60">
       <rect x="0"  y="0" width="30" height="60" fill="#00853F"/>
@@ -122,7 +158,7 @@ export default function CaissePage() {
       .sig-sub { font-size:8pt; color:#666; margin-top:2px; }
       @media print { @page { margin: 1.5cm; } }`;
 
-    const rows = transactions.map((tx) => `
+    const rows = filteredByDate.map((tx) => `
       <tr>
         <td class="${tx.type === "recette" ? "recette" : "depense"}">${tx.type === "recette" ? "Recette" : "Dépense"}</td>
         <td>${tx.motif}</td>
@@ -130,11 +166,15 @@ export default function CaissePage() {
         <td class="right ${tx.type === "recette" ? "recette" : "depense"}">${tx.type === "recette" ? "+" : "−"} ${formatFCFA(tx.montant)} FCFA</td>
       </tr>`).join("");
 
+    const printRecettes = filteredByDate.filter((t) => t.type === "recette").reduce((s, t) => s + t.montant, 0);
+    const printDepenses  = filteredByDate.filter((t) => t.type === "depense").reduce((s, t) => s + t.montant, 0);
+    const printSolde     = printRecettes - printDepenses;
+
     const win = window.open("", "_blank", "width=960,height=720");
     if (!win) return;
     win.document.write(`<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8">
-<title>Rapport de Caisse — ${today}</title>
+<title>Rapport de Caisse — ${periodLabel}</title>
 <style>${CSS}</style></head><body>
   <div class="header">
     <div class="header-top">
@@ -153,15 +193,15 @@ export default function CaissePage() {
   </div>
   <div class="report-title">
     <h1>Rapport de Caisse</h1>
-    <p class="period">${dateLabel}</p>
+    <p class="period">Période : ${periodLabel}</p>
   </div>
   <table>
     <thead><tr><th>Type</th><th>Motif</th><th>Date</th><th class="right">Montant</th></tr></thead>
     <tbody>${rows.length ? rows : "<tr><td colspan='4' style='text-align:center;color:#aaa;padding:16px;font-style:italic'>Aucune transaction</td></tr>"}</tbody>
     <tfoot>
-      <tr><td colspan="3">Total recettes</td><td class="right recette">+ ${formatFCFA(totalRecettes)} FCFA</td></tr>
-      <tr><td colspan="3">Total dépenses</td><td class="right depense">− ${formatFCFA(totalDepenses)} FCFA</td></tr>
-      <tr><td colspan="3"><strong>Solde net du jour</strong></td><td class="right"><strong>${soldeNet >= 0 ? "+" : ""}${formatFCFA(soldeNet)} FCFA</strong></td></tr>
+      <tr><td colspan="3">Total recettes</td><td class="right recette">+ ${formatFCFA(printRecettes)} FCFA</td></tr>
+      <tr><td colspan="3">Total dépenses</td><td class="right depense">− ${formatFCFA(printDepenses)} FCFA</td></tr>
+      <tr><td colspan="3"><strong>Solde net</strong></td><td class="right"><strong>${printSolde >= 0 ? "+" : ""}${formatFCFA(printSolde)} FCFA</strong></td></tr>
     </tfoot>
   </table>
   <div class="footer">
@@ -188,13 +228,13 @@ export default function CaissePage() {
   }
 
   // ── Calculs ──
-  const totalRecettes = transactions.filter((t) => t.type === "recette").reduce((s, t) => s + t.montant, 0);
-  const totalDepenses  = transactions.filter((t) => t.type === "depense").reduce((s, t) => s + t.montant, 0);
+  const totalRecettes = filteredByDate.filter((t) => t.type === "recette").reduce((s, t) => s + t.montant, 0);
+  const totalDepenses  = filteredByDate.filter((t) => t.type === "depense").reduce((s, t) => s + t.montant, 0);
   const soldeNet       = totalRecettes - totalDepenses;
 
   const txFiltrees = filter === "tous"
-    ? transactions
-    : transactions.filter((t) => t.type === filter);
+    ? filteredByDate
+    : filteredByDate.filter((t) => t.type === filter);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -250,6 +290,48 @@ export default function CaissePage() {
 
         <main className="flex-1 overflow-y-auto px-8 py-8 space-y-6">
 
+          {/* Barre de sélection de la période d'historique */}
+          <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-[#4A5C2F]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Filtre Historique :</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+                {([
+                  { key: "all", label: "Toutes les dates" },
+                  { key: "today", label: "Aujourd'hui" },
+                  { key: "month", label: "Ce mois" },
+                  { key: "custom", label: "Date précise" },
+                ] as const).map((p) => (
+                  <button
+                    key={p.key}
+                    onClick={() => setDatePeriod(p.key)}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      datePeriod === p.key
+                        ? "bg-[#4A5C2F] text-white shadow-xs"
+                        : "text-gray-600 hover:text-[#4A5C2F] hover:bg-gray-200/60"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {datePeriod === "custom" && (
+                <input
+                  type="date"
+                  value={selectedCustomDate}
+                  onChange={(e) => setSelectedCustomDate(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#4A5C2F]"
+                />
+              )}
+            </div>
+          </div>
+
           {/* Solde principal */}
           <div className="bg-[#4A5C2F] rounded-2xl p-8 shadow-lg relative overflow-hidden">
             {/* Cercles décoratifs */}
@@ -265,7 +347,7 @@ export default function CaissePage() {
                       d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                   </svg>
                 </div>
-                <p className="text-white/70 text-sm font-medium">Solde net du jour</p>
+                <p className="text-white/70 text-sm font-medium">Solde net — {periodLabel}</p>
               </div>
 
               <p className={`text-5xl font-bold tracking-tight mb-1 ${soldeNet >= 0 ? "text-white" : "text-red-300"}`}>
@@ -273,7 +355,7 @@ export default function CaissePage() {
                 <span className="text-2xl font-normal text-white/60 ml-2">FCFA</span>
               </p>
               <p className="text-white/50 text-xs mt-2">
-                Basé sur {transactions.length} transaction{transactions.length > 1 ? "s" : ""} du jour
+                Basé sur {filteredByDate.length} transaction{filteredByDate.length > 1 ? "s" : ""} ({periodLabel})
               </p>
             </div>
           </div>
@@ -294,7 +376,7 @@ export default function CaissePage() {
               <p className="text-2xl font-bold text-green-600">{formatFCFA(totalRecettes)}</p>
               <p className="text-xs text-gray-400 mt-1">FCFA encaissés</p>
               <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
-                {transactions.filter((t) => t.type === "recette").length} opération(s)
+                {filteredByDate.filter((t) => t.type === "recette").length} opération(s)
               </div>
             </div>
 
@@ -312,7 +394,7 @@ export default function CaissePage() {
               <p className="text-2xl font-bold text-red-600">{formatFCFA(totalDepenses)}</p>
               <p className="text-xs text-gray-400 mt-1">FCFA décaissés</p>
               <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
-                {transactions.filter((t) => t.type === "depense").length} opération(s)
+                {filteredByDate.filter((t) => t.type === "depense").length} opération(s)
               </div>
             </div>
 
@@ -333,9 +415,9 @@ export default function CaissePage() {
               <p className={`text-2xl font-bold ${soldeNet >= 0 ? "text-[#4A5C2F]" : "text-red-600"}`}>
                 {soldeNet >= 0 ? "+" : ""}{formatFCFA(soldeNet)}
               </p>
-              <p className="text-xs text-gray-400 mt-1">FCFA net du jour</p>
+              <p className="text-xs text-gray-400 mt-1">FCFA net ({periodLabel})</p>
               <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
-                {transactions.length} transaction(s) au total
+                {filteredByDate.length} transaction(s) au total
               </div>
             </div>
           </div>
@@ -344,8 +426,8 @@ export default function CaissePage() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-6 py-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
               <div>
-                <h3 className="font-bold text-gray-800">Historique du jour</h3>
-                <p className="text-xs text-gray-400 mt-0.5 capitalize">{todayLabel}</p>
+                <h3 className="font-bold text-gray-800">Historique des opérations</h3>
+                <p className="text-xs text-gray-400 mt-0.5 capitalize">Affichage {periodLabel}</p>
               </div>
               {/* Filtres */}
               <div className="flex gap-1.5 bg-gray-100 p-1 rounded-xl">
@@ -399,7 +481,7 @@ export default function CaissePage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-gray-700 max-w-xs truncate">{tx.motif}</td>
-                        <td className="px-6 py-4 text-gray-500 hidden md:table-cell">
+                        <td className="px-6 py-4 text-gray-500 font-medium whitespace-nowrap">
                           {new Date(tx.date).toLocaleDateString("fr-SN", {
                             day: "numeric", month: "short", year: "numeric",
                           })}
@@ -417,9 +499,9 @@ export default function CaissePage() {
                   <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                     <tr>
                       <td colSpan={3} className="px-6 py-4 text-sm font-bold text-gray-700">
-                        {filter === "tous" && "Solde net du jour"}
-                        {filter === "recette" && "Total recettes"}
-                        {filter === "depense" && "Total dépenses"}
+                        {filter === "tous" && `Solde net (${periodLabel})`}
+                        {filter === "recette" && `Total recettes (${periodLabel})`}
+                        {filter === "depense" && `Total dépenses (${periodLabel})`}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <span className={`text-base font-bold

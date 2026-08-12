@@ -161,14 +161,24 @@ const EMPTY_PV_FORM: PVFormState = {
 // ── Numérotation ─────────────────────────────────────────────────────────────
 
 async function getNextNumero(year: number): Promise<string> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("saisies")
     .select("numero")
-    .gte("numero", `SAI-${year}-`)
-    .lt("numero", `SAI-${year + 1}-`);
+    .like("numero", `SAI-${year}-%`);
+
+  if (error) {
+    console.error("[getNextNumero] Erreur requête:", JSON.stringify(error, null, 2));
+    // Fallback : générer un numéro unique basé sur timestamp
+    return `SAI-${year}-${Date.now().toString().slice(-4)}`;
+  }
+
   const nums = (data ?? [])
-    .map((d) => parseInt((d.numero as string).split("-")[2] ?? "0", 10))
-    .filter(Boolean);
+    .map((d) => {
+      const parts = String(d.numero ?? "").split("-");
+      return parseInt(parts[2] ?? "0", 10);
+    })
+    .filter((n) => !isNaN(n) && n > 0);
+
   const next = nums.length ? Math.max(...nums) + 1 : 1;
   return `SAI-${year}-${String(next).padStart(3, "0")}`;
 }
@@ -755,6 +765,7 @@ export default function SaisiesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
@@ -785,8 +796,12 @@ export default function SaisiesPage() {
         .lte("date", lastDay);
       const list = (data ?? []).map((d) => ({
         ...d,
-        numeroPV: d.numero_pv ?? d.numeroPV ?? "",
-        createdBy: d.created_by ?? d.createdBy ?? "",
+        // Remapper les noms de colonnes DB → noms de l'interface Saisie
+        nature:       d.nature_infraction ?? d.nature ?? "",
+        valeur:       d.valeur_marchandises ?? d.valeur ?? 0,
+        proprietaire: d.contrevenant ?? d.proprietaire ?? "",
+        numeroPV:     d.numero_pv ?? d.numeroPV ?? "",
+        createdBy:    d.created_by ?? d.createdBy ?? "",
       })) as Saisie[];
       list.sort((a, b) => b.date.localeCompare(a.date) || b.heure.localeCompare(a.heure));
       setSaisies(list);
@@ -833,40 +848,104 @@ export default function SaisiesPage() {
   async function handleSave() {
     if (!form.nature.trim() || !form.lieu.trim() || !form.agent.trim() || !form.proprietaire.trim()) return;
     setSaving(true);
-    const payload = {
-      date: form.date, heure: form.heure,
-      nature_infraction: form.nature.trim(), description: form.description.trim(),
-      quantite: form.quantite.trim(), unite: form.unite,
+    setSaveError(null);
+
+    // Payload avec uniquement les colonnes qui existent dans la table saisies
+    // Colonnes garanties par le schéma initial + migration add-saisies-columns
+    const dbPayload: Record<string, unknown> = {
+      date:                form.date,
+      nature_infraction:   form.nature.trim(),
       valeur_marchandises: parseFloat(form.valeur) || 0,
-      lieu: form.lieu.trim(), contrevenant: form.proprietaire.trim(),
-      numeroPV: form.numeroPV.trim(), agent: form.agent.trim(),
-      observations: form.observations.trim(), statut: form.statut,
+      contrevenant:        form.proprietaire.trim(),
+      statut:              form.statut,
+      numero_pv:           form.numeroPV.trim() || null,
+      // Colonnes ajoutées par la migration fix-saisies-caisse-correspondances.sql
+      heure:               form.heure,
+      description:         form.description.trim(),
+      quantite:            form.quantite.trim(),
+      unite:               form.unite,
+      lieu:                form.lieu.trim(),
+      agent:               form.agent.trim(),
+      observations:        form.observations.trim(),
+    };
+
+    // Données locales en nomenclature interface (pour mise à jour état React)
+    const localData = {
+      date:         form.date,
+      heure:        form.heure,
+      nature:       form.nature.trim(),
+      description:  form.description.trim(),
+      quantite:     form.quantite.trim(),
+      unite:        form.unite,
+      valeur:       parseFloat(form.valeur) || 0,
+      lieu:         form.lieu.trim(),
+      proprietaire: form.proprietaire.trim(),
+      numeroPV:     form.numeroPV.trim(),
+      agent:        form.agent.trim(),
+      observations: form.observations.trim(),
+      statut:       form.statut,
     };
 
     try {
       if (editingId) {
-        const { numeroPV: pvNum, ...updateRest } = payload;
+        console.log("[Saisies] UPDATE payload:", dbPayload);
         const { error } = await supabase
           .from("saisies")
-          .update({ ...updateRest, numero_pv: pvNum })
+          .update(dbPayload)
           .eq("id", editingId);
-        if (error) throw error;
-        setSaisies((prev) => prev.map((s) => s.id === editingId ? { ...s, ...payload } : s));
+
+        if (error) {
+          console.error("[Saisies] Erreur UPDATE:", {
+            code:    error.code,
+            message: error.message,
+            details: error.details,
+            hint:    error.hint,
+          });
+          throw error;
+        }
+        setSaisies((prev) => prev.map((s) => s.id === editingId ? { ...s, ...localData } : s));
+
       } else {
         const year = new Date(form.date).getFullYear();
         const numero = await getNextNumero(year);
-        const { numeroPV, ...rest } = payload;
+
+        const insertPayload = {
+          ...dbPayload,
+          numero,
+          created_by: profile?.uid ?? user?.id ?? "",
+          brigade_id: profile?.brigadeId ?? null,
+        };
+
+        console.log("[Saisies] INSERT payload:", insertPayload);
+
         const { data: newRow, error } = await supabase
           .from("saisies")
-          .insert({ ...rest, numero, numero_pv: numeroPV, created_by: profile?.uid ?? "", brigade_id: profile?.brigadeId ?? null })
+          .insert(insertPayload)
           .select()
           .single();
-        if (error) throw error;
-        if (newRow) setSaisies((prev) => [{ id: newRow.id, numero, ...payload }, ...prev]);
+
+        if (error) {
+          console.error("[Saisies] Erreur INSERT:", {
+            code:    error.code,
+            message: error.message,
+            details: error.details,
+            hint:    error.hint,
+          });
+          throw error;
+        }
+
+        if (newRow) {
+          setSaisies((prev) => [{ id: newRow.id, numero, ...localData }, ...prev]);
+        }
       }
+
       closeForm();
-    } catch (error) {
-      console.error("[Saisies] Erreur sauvegarde:", error);
+
+    } catch (err: unknown) {
+      const sb = err as { code?: string; message?: string; details?: string; hint?: string };
+      const msg = sb?.message ?? String(err);
+      const detail = [sb?.code, sb?.details, sb?.hint].filter(Boolean).join(" — ");
+      setSaveError(`Erreur : ${msg}${detail ? ` (${detail})` : ""}`);
     } finally {
       setSaving(false);
     }
@@ -1017,6 +1096,12 @@ export default function SaisiesPage() {
             <h2 className="font-bold text-gray-800 mb-5 text-base">
               {editingId ? "Modifier la saisie" : "Nouvelle saisie"}
             </h2>
+            {saveError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center justify-between">
+                <span>{saveError}</span>
+                <button onClick={() => setSaveError(null)} className="text-red-500 hover:text-red-700 font-bold ml-2">×</button>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-4">
 
               <div>

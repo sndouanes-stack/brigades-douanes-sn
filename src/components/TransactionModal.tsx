@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useUserProfile } from "@/lib/useUserProfile";
 
 export type TypeTransaction = "recette" | "depense";
 
@@ -20,6 +18,7 @@ export interface Transaction {
 }
 
 export default function TransactionModal({ type, onClose, onSaved }: Props) {
+  const { user, profile } = useUserProfile();
   const today = new Date().toISOString().split("T")[0];
   const [montant, setMontant] = useState("");
   const [motif, setMotif] = useState("");
@@ -49,24 +48,32 @@ export default function TransactionModal({ type, onClose, onSaved }: Props) {
         montant: montantNum,
         libelle: motif.trim(),
         date,
+        brigade_id: profile?.brigadeId || null,
+        created_by: user?.id || "",
       };
 
-      const { data, error: dbError } = await supabase
-        .from("transactions")
-        .insert(payload)
-        .select()
-        .single();
+      const res = await fetch("/api/caisse/transaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-      if (dbError) {
-        console.error("[TransactionModal] Erreur Supabase:", dbError);
-        throw dbError;
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "Erreur lors de la sauvegarde.");
       }
 
-      onSaved({ type, montant: montantNum, motif: motif.trim(), date, id: data.id });
+      onSaved({
+        type,
+        montant: montantNum,
+        motif: motif.trim(),
+        date,
+        id: json.transaction?.id,
+      });
       onClose();
     } catch (err) {
       console.error("[TransactionModal] Erreur sauvegarde:", err);
-      setError("Erreur lors de la sauvegarde. Vérifiez votre connexion.");
+      setError(err instanceof Error ? err.message : "Erreur lors de la sauvegarde.");
     } finally {
       setSaving(false);
     }
@@ -164,7 +171,7 @@ export default function TransactionModal({ type, onClose, onSaved }: Props) {
                     viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
-                  Économiser
+                  Enregistrer
                 </>
               )}
             </button>

@@ -73,8 +73,20 @@ export const ROLE_ALLOWED_PREFIXES: Record<Role, string[]> = {
   ADMIN:               ["/admin", "/dashboard", "/agent", "/subdivision", "/region"],
 };
 
+export function normalizeRole(roleStr?: string | null): Role {
+  if (!roleStr) return "AGENT";
+  const r = roleStr.toUpperCase().trim().replace(/[\s-]+/g, "_");
+  if (r.includes("ADMIN")) return "ADMIN";
+  if (r.includes("DIRECTEUR") || r.includes("REGIONAL")) return "DIRECTEUR_REGIONAL";
+  if (r.includes("SUBDIVISION")) return "CHEF_SUBDIVISION";
+  if (r.includes("CHEF") || r.includes("BRIGADE")) return "CHEF_BRIGADE";
+  if (r.includes("AGENT")) return "AGENT";
+  return "AGENT";
+}
+
 export function canAccess(role: Role, pathname: string): boolean {
-  return ROLE_ALLOWED_PREFIXES[role].some((prefix) => pathname.startsWith(prefix));
+  const norm = normalizeRole(role);
+  return (ROLE_ALLOWED_PREFIXES[norm] ?? []).some((prefix) => pathname.startsWith(prefix));
 }
 
 // ── Structure géographique ────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { ROLE_ALLOWED_PREFIXES, ROLE_HOME, normalizeRole } from "@/lib/roles";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -27,7 +28,6 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (
-    pathname === "/login" ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
     pathname === "/favicon.ico"
@@ -35,17 +35,36 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // Vérifier la présence des cookies de session et de rôle
+  const sessionCookie = request.cookies.get("session")?.value;
+  const rawRole = request.cookies.get("role")?.value;
+  const roleCookie = rawRole ? normalizeRole(rawRole) : null;
+
   // Vérifie la session Supabase (rafraîchit le token si nécessaire)
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
+  const isAuthenticated = !!user || !!sessionCookie;
+
+  if (!isAuthenticated) {
+    if (pathname === "/login") {
+      return supabaseResponse;
+    }
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirection selon le rôle (cookie posé côté client dans useUserProfile)
-  const role = request.cookies.get("role")?.value?.toUpperCase();
-  if (role === "AGENT" && pathname.startsWith("/dashboard")) {
-    return NextResponse.redirect(new URL("/agent", request.url));
+  const home = roleCookie ? ROLE_HOME[roleCookie] : "/dashboard";
+
+  // Si l'utilisateur est connecté et consulte /login, le rediriger vers son espace
+  if (pathname === "/login") {
+    return NextResponse.redirect(new URL(home, request.url));
+  }
+
+  // Si le rôle est connu et que l'utilisateur accède à une route non autorisée pour son rôle
+  if (roleCookie && ROLE_ALLOWED_PREFIXES[roleCookie]) {
+    const allowed = ROLE_ALLOWED_PREFIXES[roleCookie].some((prefix) => pathname.startsWith(prefix));
+    if (!allowed) {
+      return NextResponse.redirect(new URL(home, request.url));
+    }
   }
 
   return supabaseResponse;

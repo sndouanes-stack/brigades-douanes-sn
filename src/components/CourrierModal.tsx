@@ -49,7 +49,15 @@ export default function CourrierModal({
   const statutOptions = isArrivee ? STATUTS_ARRIVEE : STATUTS_DEPART;
 
   const [date,          setDate]         = useState(editingCourrier?.date          ?? today);
-  const [interlocuteur, setInterlocuteur]= useState(editingCourrier?.interlocuteur ?? "");
+  // En édition : récupérer depuis expediteur/destinataire (colonnes DB réelles)
+  // puis fallback sur l'ancien champ interlocuteur (rétrocompatibilité)
+  const [interlocuteur, setInterlocuteur]= useState(
+    editingCourrier
+      ? (isArrivee ? editingCourrier.expediteur : editingCourrier.destinataire)
+        ?? editingCourrier.interlocuteur
+        ?? ""
+      : ""
+  );
   const [structure,     setStructure]    = useState(editingCourrier?.structure      ?? "");
   const [objet,         setObjet]        = useState(editingCourrier?.objet         ?? "");
   const [urgence,       setUrgence]      = useState<Urgence>(editingCourrier?.urgence ?? "Normal");

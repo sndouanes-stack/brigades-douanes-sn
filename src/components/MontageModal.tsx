@@ -182,7 +182,7 @@ export default function MontageModal({ userEmail, brigadeId, agents, onAgentAdde
     setError("");
     try {
       const resume = {
-        presents:         Object.values(statuts).filter((s) => s === "Présent").length,
+        presents:         Object.values(statuts).filter((s) => s !== "Permissionnaire").length,
         patrouilles:      Object.values(statuts).filter((s) => s === "En patrouille").length,
         barrages:         Object.values(statuts).filter((s) => s === "Barrage sur route").length,
         permissionnaires: Object.values(statuts).filter((s) => s === "Permissionnaire").length,

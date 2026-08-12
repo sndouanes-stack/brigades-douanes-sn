@@ -3,13 +3,14 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/lib/useUserProfile";
 import SubdivisionSidebar from "@/components/SubdivisionSidebar";
 import BrigadeSearch from "@/components/BrigadeSearch";
 import { STATUT_STYLES, type Statut } from "@/lib/agents";
-import { BRIGADES, SUBDIVISIONS } from "@/lib/roles";
+import { BRIGADES, SUBDIVISIONS, ROLE_HOME } from "@/lib/roles";
+import { logout } from "@/lib/logout";
 
 interface MontageData {
   brigade_id: string;
@@ -28,20 +29,21 @@ interface AgentInfo {
 function computeResume(statuts: Record<string, Statut>) {
   const counts = { presents: 0, patrouilles: 0, barrages: 0, permissionnaires: 0, repos: 0 };
   Object.values(statuts ?? {}).forEach((s) => {
-    if (s === "Présent") counts.presents++;
-    else if (s === "En patrouille") counts.patrouilles++;
+    if (s === "En patrouille") counts.patrouilles++;
     else if (s === "Barrage sur route") counts.barrages++;
     else if (s === "Permissionnaire") counts.permissionnaires++;
     else if (s === "Repos") counts.repos++;
+    if (s !== "Permissionnaire") counts.presents++;
   });
   return counts;
 }
 
 function SubdivisionPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const vue = searchParams.get("vue") ?? "dashboard";
 
-  const { profile, loading } = useUserProfile();
+  const { user, profile, loading } = useUserProfile();
   const [montages, setMontages] = useState<MontageData[]>([]);
   const [agentsByMatricule, setAgentsByMatricule] = useState<Record<string, AgentInfo>>({});
   const [allAgents, setAllAgents] = useState<AgentInfo[]>([]);
@@ -97,10 +99,18 @@ function SubdivisionPageContent() {
 
   useEffect(() => {
     if (!loading) {
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+      if (profile && profile.role !== "ADMIN" && profile.role !== "CHEF_SUBDIVISION") {
+        router.replace(ROLE_HOME[profile.role] || "/dashboard");
+        return;
+      }
       fetchMontages();
       fetchAllAgents();
     }
-  }, [loading, fetchMontages, fetchAllAgents]);
+  }, [loading, user, profile, router, fetchMontages, fetchAllAgents]);
 
   const totalResume = montages.reduce(
     (acc, m) => {
@@ -116,7 +126,7 @@ function SubdivisionPageContent() {
     { presents: 0, patrouilles: 0, barrages: 0, permissionnaires: 0, repos: 0 }
   );
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="min-h-screen bg-[#4A5C2F] flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-[#C9A84C] border-t-transparent rounded-full animate-spin" />
@@ -131,16 +141,42 @@ function SubdivisionPageContent() {
       <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
 
         {/* Header */}
-        <div className="bg-[#4A5C2F] px-8 py-6 shadow-lg shrink-0">
-          <div className="flex items-center justify-between">
+        <div className="bg-[#4A5C2F] px-4 md:px-8 py-6 shadow-lg shrink-0 pt-16 md:pt-6">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[#C9A84C] text-xs uppercase tracking-widest mb-1">Chef de Subdivision</p>
-              <h1 className="text-white text-xl font-bold">
+              <h1 className="text-white text-lg md:text-xl font-bold">
                 {subdivision?.nom ?? "Subdivision"}
               </h1>
-              <p className="text-white/50 text-xs mt-0.5">
+              <p className="text-white/50 text-xs mt-0.5 capitalize">
                 {new Date().toLocaleDateString("fr-SN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
               </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {profile && (
+                <div className="hidden sm:flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-1.5 text-white">
+                  <div className="w-6 h-6 rounded-full bg-[#C9A84C] text-[#4A5C2F] flex items-center justify-center text-xs font-bold shrink-0">
+                    {profile.prenom?.[0]?.toUpperCase()}
+                  </div>
+                  <span className="text-xs md:text-sm font-medium max-w-[200px] truncate">
+                    {profile.prenom} <span className="uppercase">{profile.nom}</span>
+                  </span>
+                </div>
+              )}
+              <button
+                onClick={logout}
+                className="flex items-center gap-2 text-xs md:text-sm text-white/80 hover:text-white
+                  bg-white/10 hover:bg-red-500/20 border border-white/20 hover:border-red-400
+                  px-3 md:px-4 py-2 rounded-lg transition-all duration-150 shrink-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                  viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">Déconnexion</span>
+              </button>
             </div>
           </div>
         </div>
@@ -296,29 +332,31 @@ function SubdivisionPageContent() {
                 <p className="text-center text-gray-400 text-sm py-8">Aucun agent enregistré dans cette subdivision.</p>
               ) : (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Matricule</th>
-                        <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nom & Prénom</th>
-                        <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grade</th>
-                        <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Brigade</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {allAgents.map((agent, i) => {
-                        const brigade = brigades.find((b) => b.id === agent.brigadeId);
-                        return (
-                          <tr key={i} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-5 py-3 font-mono text-xs text-gray-500">{agent.matricule ?? "—"}</td>
-                            <td className="px-5 py-3 font-semibold text-gray-800">{agent.nom} {agent.prenom}</td>
-                            <td className="px-5 py-3 text-gray-500 text-xs">{agent.grade ?? "—"}</td>
-                            <td className="px-5 py-3 text-gray-500 text-xs">{brigade?.nom ?? "—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Matricule</th>
+                          <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nom & Prénom</th>
+                          <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grade</th>
+                          <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Brigade</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {allAgents.map((agent, i) => {
+                          const brigade = brigades.find((b) => b.id === agent.brigadeId);
+                          return (
+                            <tr key={i} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-5 py-3 font-mono text-xs text-gray-500">{agent.matricule ?? "—"}</td>
+                              <td className="px-5 py-3 font-semibold text-gray-800">{agent.nom} {agent.prenom}</td>
+                              <td className="px-5 py-3 text-gray-500 text-xs">{agent.grade ?? "—"}</td>
+                              <td className="px-5 py-3 text-gray-500 text-xs">{brigade?.nom ?? "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>

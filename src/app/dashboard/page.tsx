@@ -8,6 +8,7 @@ import { useIdentityLabel } from "@/lib/useIdentityLabel";
 import Sidebar from "@/components/Sidebar";
 import { BRIGADES, SUBDIVISIONS, DIRECTIONS_REGIONALES, type Brigade } from "@/lib/roles";
 import { STATUT_STYLES, type Statut } from "@/lib/agents";
+import { logout } from "@/lib/logout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -179,13 +180,6 @@ export default function DashboardPage() {
     if (!loading && !user) router.replace("/login");
   }, [user, loading, router]);
 
-  async function handleLogout() {
-    document.cookie = "session=; path=/; max-age=0";
-    document.cookie = "role=; path=/; max-age=0";
-    await supabase.auth.signOut();
-    router.push("/login");
-  }
-
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -266,36 +260,36 @@ export default function DashboardPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between shadow-sm">
+        <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 pt-16 md:pt-4 flex items-center justify-between shadow-sm">
           <div>
-            <h1 className="text-lg font-bold text-[#4A5C2F]">
+            <h1 className="text-base md:text-lg font-bold text-[#4A5C2F]">
               {roleUpper === "ADMIN"
                 ? "Direction Générale des Douanes"
                 : brigadeName || "Brigade des Douanes"}
             </h1>
             <p className="text-xs text-gray-400 capitalize mt-0.5">{todayLabel}</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {identityLabel && (
               <div className="hidden sm:flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-full px-4 py-1.5">
                 <div className="w-6 h-6 rounded-full bg-[#4A5C2F] flex items-center justify-center text-white text-xs font-bold shrink-0">
-                  {user.email?.[0].toUpperCase()}
+                  {profile?.prenom?.[0]?.toUpperCase() ?? user.email?.[0].toUpperCase()}
                 </div>
                 <span className="text-sm text-gray-700 font-medium max-w-[260px] truncate">{identityLabel}</span>
               </div>
             )}
             <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-600
+              onClick={logout}
+              className="flex items-center gap-2 text-xs md:text-sm text-gray-700 hover:text-red-600
                 bg-gray-100 hover:bg-red-50 border border-gray-200 hover:border-red-200
-                px-4 py-2 rounded-lg transition-all duration-150"
+                px-3 md:px-4 py-2 rounded-lg transition-all duration-150 shrink-0"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
                 viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round"
                   d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
-              Déconnexion
+              <span>Déconnexion</span>
             </button>
           </div>
         </header>

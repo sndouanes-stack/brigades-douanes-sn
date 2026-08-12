@@ -252,7 +252,7 @@ export default function PersonnelPage() {
         );
         const statuts: Record<string, Statut> = { ...defaultStatuts, [myStatutKey]: newStatut };
         const resume = {
-          presents:         Object.values(statuts).filter((s) => s === "Présent").length,
+          presents:         Object.values(statuts).filter((s) => s !== "Permissionnaire").length,
           patrouilles:      Object.values(statuts).filter((s) => s === "En patrouille").length,
           barrages:         Object.values(statuts).filter((s) => s === "Barrage sur route").length,
           permissionnaires: Object.values(statuts).filter((s) => s === "Permissionnaire").length,
@@ -288,7 +288,7 @@ export default function PersonnelPage() {
 
   // ── Calculs ── directs depuis todayStatuts (indépendant du chargement des agents)
   const todayCounts = {
-    presents:         Object.values(todayStatuts).filter((s) => s === "Présent").length,
+    presents:         Object.values(todayStatuts).filter((s) => s !== "Permissionnaire").length,
     patrouilles:      Object.values(todayStatuts).filter((s) => s === "En patrouille").length,
     barrages:         Object.values(todayStatuts).filter((s) => s === "Barrage sur route").length,
     permissionnaires: Object.values(todayStatuts).filter((s) => s === "Permissionnaire").length,
@@ -481,7 +481,11 @@ export default function PersonnelPage() {
         a.matricule.toLowerCase().includes(terme) ||
         (a.grade || "").toLowerCase().includes(terme);
       const matchStatut =
-        filterStatut === "Tous" || todayStatuts[a.matricule] === filterStatut;
+        filterStatut === "Tous"
+          ? true
+          : filterStatut === "Présent"
+          ? todayStatuts[a.matricule] !== "Permissionnaire"
+          : todayStatuts[a.matricule] === filterStatut;
       return matchSearch && matchStatut;
     });
   }, [effectiveAgents, search, filterStatut, todayStatuts]);

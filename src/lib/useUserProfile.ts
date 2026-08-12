@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import { UserProfile, ROLE_HOME } from "@/lib/roles";
+import { UserProfile, ROLE_HOME, normalizeRole } from "@/lib/roles";
 
 export function useUserProfile() {
   const [user, setUser]       = useState<User | null>(null);
@@ -46,12 +46,13 @@ export function useUserProfile() {
       .single();
 
     if (!error && data) {
+      const mappedRole = normalizeRole(data.role);
       const mapped: UserProfile = {
         uid:                  data.id,
         email:                data.email ?? "",
         nom:                  data.nom ?? "",
         prenom:               data.prenom ?? "",
-        role:                 (data.role?.toUpperCase() ?? "CHEF_BRIGADE") as UserProfile["role"],
+        role:                 mappedRole,
         brigadeId:            data.brigade_id ?? undefined,
         subdivisionId:        data.subdivision_id ?? undefined,
         directionRegionaleId: data.direction_regionale_id ?? undefined,
@@ -67,21 +68,21 @@ export function useUserProfile() {
       }
 
       setProfile(mapped);
-      document.cookie = `role=${mapped.role}; path=/; max-age=3600; SameSite=Strict`;
+      document.cookie = `role=${mapped.role}; path=/; max-age=3600; SameSite=Lax`;
     } else {
       // Table inaccessible (RLS) — lire le rôle depuis les métadonnées Auth
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      const metaRole = ((authUser?.user_metadata?.role as string) ?? "CHEF_BRIGADE").toUpperCase();
+      const metaRole = normalizeRole(authUser?.user_metadata?.role as string);
       const fallback: UserProfile = {
         uid,
         email:   authUser?.email   ?? "",
         nom:     (authUser?.user_metadata?.nom    as string) ?? "",
         prenom:  (authUser?.user_metadata?.prenom as string) ?? "",
-        role:    metaRole as UserProfile["role"],
+        role:    metaRole,
         actif:   true,
       };
       setProfile(fallback);
-      document.cookie = `role=${metaRole}; path=/; max-age=3600; SameSite=Strict`;
+      document.cookie = `role=${metaRole}; path=/; max-age=3600; SameSite=Lax`;
     }
     setLoading(false);
   }
@@ -90,11 +91,11 @@ export function useUserProfile() {
 }
 
 function setSessionCookie(token: string) {
-  document.cookie = `session=${token}; path=/; max-age=3600; SameSite=Strict`;
+  document.cookie = `session=${token}; path=/; max-age=3600; SameSite=Lax`;
 }
 function clearCookies() {
-  document.cookie = "session=; path=/; max-age=0";
-  document.cookie = "role=; path=/; max-age=0";
+  document.cookie = "session=; path=/; max-age=0; SameSite=Lax";
+  document.cookie = "role=; path=/; max-age=0; SameSite=Lax";
 }
 
 export { ROLE_HOME };

@@ -60,12 +60,36 @@ export const GRADE_ABBREV: Record<string, string> = {
   "Agent de Constatation":    "AC",
   "Contrôleur des Douanes":   "Ctr",
   "Inspecteur des Douanes":   "Insp",
+  "Agent":                    "AC",
+  "Agent de constatation":    "AC",
+  "Adjoint":                  "A/C",
+  "Préposé":                  "Psé",
+  "Contrôleur":               "Ctr",
+  "Inspecteur":               "Insp",
 };
 
-/** Retourne l'abréviation d'un grade connu, chaîne vide pour tout grade inconnu */
+/** Retourne l'abréviation d'un grade connu ou détecté */
 export function gradeAbbrev(grade: string | undefined | null): string {
   if (!grade) return "";
-  return GRADE_ABBREV[grade] ?? "";
+  const trimmed = grade.trim();
+  if (GRADE_ABBREV[trimmed]) return GRADE_ABBREV[trimmed];
+  const upper = trimmed.toUpperCase();
+  if (upper === "AC" || upper.includes("CONSTATATION")) return "AC";
+  if (upper === "A/C" || upper.includes("ADJOINT")) return "A/C";
+  if (upper.includes("PREPOSE") || upper.includes("PRÉPOSÉ") || upper === "PSE") return "Psé";
+  if (upper.includes("CONTROLEUR") || upper.includes("CONTRÔLEUR") || upper === "CTR") return "Ctr";
+  if (upper.includes("INSPECTEUR") || upper === "INSP") return "Insp";
+  return trimmed;
+}
+
+/** Formate le nom d'affichage au format "Grade Nom" (ex: "AC Dione") */
+export function formatAgentName(grade?: string | null, nom?: string | null, prenom?: string | null): string {
+  const g = gradeAbbrev(grade);
+  const n = (nom ?? "").trim();
+  if (g && n) return `${g} ${n}`;
+  if (n) return `${g ? g + " " : ""}${n}`;
+  const p = (prenom ?? "").trim();
+  return `${g ? g + " " : ""}${p}`.trim() || "Agent";
 }
 
 /** Vérifie si un grade est un grade douanier reconnu */

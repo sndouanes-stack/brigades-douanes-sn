@@ -3,13 +3,14 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/lib/useUserProfile";
 import RegionSidebar from "@/components/RegionSidebar";
 import BrigadeSearch from "@/components/BrigadeSearch";
 import { STATUT_STYLES, type Statut } from "@/lib/agents";
-import { BRIGADES, SUBDIVISIONS, DIRECTIONS_REGIONALES } from "@/lib/roles";
+import { BRIGADES, SUBDIVISIONS, DIRECTIONS_REGIONALES, ROLE_HOME } from "@/lib/roles";
+import { logout } from "@/lib/logout";
 
 interface MontageData {
   brigade_id: string;
@@ -51,20 +52,21 @@ const STATUT_COURRIER_STYLES: Record<StatutCourrier, string> = {
 function computeResume(statuts: Record<string, Statut>) {
   const counts = { presents: 0, patrouilles: 0, barrages: 0, permissionnaires: 0, repos: 0 };
   Object.values(statuts ?? {}).forEach((s) => {
-    if (s === "Présent") counts.presents++;
-    else if (s === "En patrouille") counts.patrouilles++;
+    if (s === "En patrouille") counts.patrouilles++;
     else if (s === "Barrage sur route") counts.barrages++;
     else if (s === "Permissionnaire") counts.permissionnaires++;
     else if (s === "Repos") counts.repos++;
+    if (s !== "Permissionnaire") counts.presents++;
   });
   return counts;
 }
 
 function RegionPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const vue = searchParams.get("vue") ?? "dashboard";
 
-  const { profile, loading } = useUserProfile();
+  const { user, profile, loading } = useUserProfile();
   const [montages, setMontages] = useState<MontageData[]>([]);
   const [agentsByMatricule, setAgentsByMatricule] = useState<Record<string, AgentInfo>>({});
   const [allAgents, setAllAgents] = useState<AgentInfo[]>([]);
@@ -158,11 +160,19 @@ function RegionPageContent() {
 
   useEffect(() => {
     if (!loading) {
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+      if (profile && profile.role !== "ADMIN" && profile.role !== "DIRECTEUR_REGIONAL") {
+        router.replace(ROLE_HOME[profile.role] || "/dashboard");
+        return;
+      }
       fetchMontages();
       fetchAllAgents();
       fetchSecondaryData();
     }
-  }, [loading, fetchMontages, fetchAllAgents, fetchSecondaryData]);
+  }, [loading, user, profile, router, fetchMontages, fetchAllAgents, fetchSecondaryData]);
 
   // ── Totaux ────────────────────────────────────────────────────────────────
   const totalResume = montages.reduce(
@@ -179,7 +189,7 @@ function RegionPageContent() {
     { presents: 0, patrouilles: 0, barrages: 0, permissionnaires: 0, repos: 0 }
   );
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="min-h-screen bg-[#4A5C2F] flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-[#C9A84C] border-t-transparent rounded-full animate-spin" />
@@ -202,16 +212,42 @@ function RegionPageContent() {
       <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
 
         {/* Header */}
-        <div className="bg-[#4A5C2F] px-8 py-6 shadow-lg shrink-0">
-          <div className="flex items-center justify-between">
+        <div className="bg-[#4A5C2F] px-4 md:px-8 py-6 shadow-lg shrink-0 pt-16 md:pt-6">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[#C9A84C] text-xs uppercase tracking-widest mb-1">Directeur Régional</p>
-              <h1 className="text-white text-xl font-bold">
+              <h1 className="text-white text-lg md:text-xl font-bold">
                 {direction?.nom ?? "Direction Régionale"}
               </h1>
-              <p className="text-white/50 text-xs mt-0.5">
+              <p className="text-white/50 text-xs mt-0.5 capitalize">
                 {new Date().toLocaleDateString("fr-SN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
               </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {profile && (
+                <div className="hidden sm:flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-1.5 text-white">
+                  <div className="w-6 h-6 rounded-full bg-[#C9A84C] text-[#4A5C2F] flex items-center justify-center text-xs font-bold shrink-0">
+                    {profile.prenom?.[0]?.toUpperCase()}
+                  </div>
+                  <span className="text-xs md:text-sm font-medium max-w-[200px] truncate">
+                    {profile.prenom} <span className="uppercase">{profile.nom}</span>
+                  </span>
+                </div>
+              )}
+              <button
+                onClick={logout}
+                className="flex items-center gap-2 text-xs md:text-sm text-white/80 hover:text-white
+                  bg-white/10 hover:bg-red-500/20 border border-white/20 hover:border-red-400
+                  px-3 md:px-4 py-2 rounded-lg transition-all duration-150 shrink-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                  viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">Déconnexion</span>
+              </button>
             </div>
           </div>
         </div>

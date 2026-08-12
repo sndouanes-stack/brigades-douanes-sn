@@ -180,7 +180,7 @@ function AgentPageContent() {
   const [rapportSaving, setRapportSaving] = useState(false);
   const [confirmDeleteRapportId, setConfirmDeleteRapportId] = useState<string | null>(null);
 
-  const fetchRapports = useCallback(async (_brigadeId: string) => {
+  const fetchRapports = useCallback(async () => {
     try {
       // Utilise l'API route côté serveur (service role) pour contourner la
       // politique RLS "own write" qui bloquerait les rapports des autres agents.
@@ -198,7 +198,7 @@ function AgentPageContent() {
 
   useEffect(() => {
     if (!profile?.brigadeId) { setRapportsLoading(false); return; }
-    void fetchRapports(profile.brigadeId);
+    void fetchRapports();
   }, [profile?.brigadeId, fetchRapports]);
 
   function openNewRapport() {
@@ -230,7 +230,7 @@ function AgentPageContent() {
           .insert({ ...payload, brigade_id: profile.brigadeId, created_by: user?.id ?? null });
       }
       // Re-fetch pour afficher les données réelles
-      await fetchRapports(profile.brigadeId);
+      await fetchRapports();
       setShowRapportForm(false);
       setEditingRapportId(null);
     } catch {
