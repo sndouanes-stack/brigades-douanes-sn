@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     const {
       uid, password, nom, prenom, role,
       brigade_id, subdivision_id, direction_regionale_id,
-      matricule, grade, actif,
+      matricule, grade, actif, telephone,
     } = body;
 
     if (!uid) {
@@ -16,18 +16,28 @@ export async function POST(request: Request) {
 
     const admin = getSupabaseAdmin();
 
-    // Si un mot de passe est fourni, le mettre à jour dans Supabase Auth
+    const cleanPhone = (telephone ?? "").trim();
+
+    // Mettre à jour metadata + password dans Auth si nécessaire
+    const authUpdates: Record<string, unknown> = {
+      user_metadata: {
+        nom,
+        prenom,
+        role,
+        telephone: cleanPhone,
+      },
+    };
+
     if (password && typeof password === "string" && password.trim() !== "") {
       if (password.trim().length < 6) {
         return NextResponse.json({ error: "Le mot de passe doit contenir au moins 6 caractères." }, { status: 400 });
       }
-      const { error: authErr } = await admin.auth.admin.updateUserById(uid, {
-        password: password.trim(),
-      });
-      if (authErr) {
-        console.error("[UpdateUser API] Erreur maj password:", authErr);
-        return NextResponse.json({ error: `Erreur mot de passe : ${authErr.message}` }, { status: 400 });
-      }
+      authUpdates.password = password.trim();
+    }
+
+    const { error: authErr } = await admin.auth.admin.updateUserById(uid, authUpdates);
+    if (authErr) {
+      console.error("[UpdateUser API] Erreur maj auth:", authErr);
     }
 
     // Mettre à jour les données dans la table public.users
@@ -42,6 +52,7 @@ export async function POST(request: Request) {
     };
     if (grade !== undefined) updates.grade = grade || null;
     if (actif !== undefined) updates.actif = actif;
+    if (telephone !== undefined) updates.telephone = cleanPhone || null;
 
     const { error: dbError } = await admin
       .from("users")

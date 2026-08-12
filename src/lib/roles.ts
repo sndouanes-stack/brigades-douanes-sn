@@ -17,6 +17,7 @@ export interface UserProfile {
   directionRegionaleId?: string;
   matricule?: string;
   grade?: string;
+  telephone?: string;
   actif: boolean;
   createdAt?: unknown;
 }

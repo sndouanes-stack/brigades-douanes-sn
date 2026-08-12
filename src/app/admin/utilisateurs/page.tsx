@@ -27,11 +27,12 @@ interface FormState {
   regionId: string;
   directionRegionaleId: string;
   matricule: string;
+  telephone: string;
 }
 
 const DEFAULT_FORM: FormState = {
   email: "", password: "", nom: "", prenom: "",
-  role: "AGENT", brigadeId: "", subdivisionId: "", regionId: "", directionRegionaleId: "", matricule: "",
+  role: "AGENT", brigadeId: "", subdivisionId: "", regionId: "", directionRegionaleId: "", matricule: "", telephone: "",
 };
 
 function generatePassword(): string {
@@ -67,7 +68,7 @@ export default function AdminUtilisateursPage() {
   // Edit modal
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [editForm, setEditForm] = useState<Omit<FormState, "email" | "password"> & { newPassword: string }>({
-    nom: "", prenom: "", role: "AGENT", brigadeId: "", subdivisionId: "", regionId: "", directionRegionaleId: "", matricule: "", newPassword: "",
+    nom: "", prenom: "", role: "AGENT", brigadeId: "", subdivisionId: "", regionId: "", directionRegionaleId: "", matricule: "", telephone: "", newPassword: "",
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
@@ -101,6 +102,7 @@ export default function AdminUtilisateursPage() {
       directionRegionaleId: d.direction_regionale_id ?? undefined,
       matricule: d.matricule ?? undefined,
       grade: d.grade ?? undefined,
+      telephone: d.telephone ?? undefined,
     } as UserProfile));
     list.sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom));
     setUsers(list);
@@ -192,6 +194,7 @@ export default function AdminUtilisateursPage() {
           subdivision_id: form.subdivisionId || null,
           direction_regionale_id: form.directionRegionaleId || null,
           matricule: form.matricule.trim() || null,
+          telephone: form.telephone.trim() || null,
           actif: true,
         }),
       });
@@ -227,6 +230,7 @@ export default function AdminUtilisateursPage() {
       regionId: user.regionId ?? "",
       directionRegionaleId: user.directionRegionaleId ?? "",
       matricule: user.matricule ?? "",
+      telephone: user.telephone ?? "",
       newPassword: "",
     });
     setEditError("");
@@ -287,6 +291,7 @@ export default function AdminUtilisateursPage() {
           subdivision_id: editForm.subdivisionId || null,
           direction_regionale_id: editForm.directionRegionaleId || null,
           matricule: editForm.matricule.trim() || null,
+          telephone: editForm.telephone.trim() || null,
           password: editForm.newPassword.trim() || undefined,
         }),
       });
@@ -301,6 +306,7 @@ export default function AdminUtilisateursPage() {
           subdivisionId: editForm.subdivisionId || undefined,
           directionRegionaleId: editForm.directionRegionaleId || undefined,
           matricule: editForm.matricule.trim() || undefined,
+          telephone: editForm.telephone.trim() || undefined,
         } : u)
       );
       setEditingUser(null);
@@ -588,6 +594,11 @@ export default function AdminUtilisateursPage() {
                     <td className="px-6 py-4">
                       <p className="font-semibold text-gray-800">{user.prenom} <span className="uppercase">{user.nom}</span></p>
                       <p className="text-xs text-gray-400 mt-0.5">{user.email}</p>
+                      {user.telephone && (
+                        <p className="text-xs text-[#4A5C2F] font-semibold mt-0.5 flex items-center gap-1">
+                          <span>📱</span> {user.telephone}
+                        </p>
+                      )}
                       {user.matricule && (
                         <p className="text-xs font-mono text-gray-400 mt-0.5">{user.matricule}</p>
                       )}
@@ -738,6 +749,24 @@ export default function AdminUtilisateursPage() {
                   type="email" placeholder="agent@douanes.sn" className={inputCls} />
               </div>
 
+              {/* Numéro de téléphone */}
+              <div>
+                <label className={labelCls}>Numéro de téléphone (pour mot de passe oublié)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">+221</span>
+                  <input
+                    type="tel"
+                    value={form.telephone}
+                    onChange={(e) => handleFormChange("telephone", e.target.value)}
+                    placeholder="77 000 00 00"
+                    className={inputCls + " pl-12"}
+                  />
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Permet la récupération autonome du mot de passe en cas d&apos;oubli.
+                </p>
+              </div>
+
               {/* Mot de passe */}
               <div>
                 <label className={labelCls}>Mot de passe temporaire *</label>
@@ -859,11 +888,29 @@ export default function AdminUtilisateursPage() {
                 </div>
               </div>
 
-              {/* Email (readonly) */}
+              {/* Email */}
               <div>
                 <label className={labelCls}>Email</label>
                 <input value={editingUser.email} readOnly
                   className={inputCls + " bg-gray-50 text-gray-400 cursor-not-allowed"} />
+              </div>
+
+              {/* Numéro de téléphone */}
+              <div>
+                <label className={labelCls}>Numéro de téléphone (pour mot de passe oublié)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">+221</span>
+                  <input
+                    type="tel"
+                    value={editForm.telephone}
+                    onChange={(e) => handleEditChange("telephone", e.target.value)}
+                    placeholder="77 000 00 00"
+                    className={inputCls + " pl-12"}
+                  />
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Permet la récupération autonome du mot de passe en cas d&apos;oubli.
+                </p>
               </div>
 
               {/* Changer le mot de passe (optionnel) */}

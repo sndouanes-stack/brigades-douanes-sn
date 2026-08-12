@@ -6,15 +6,23 @@ export async function POST(request: Request) {
   const {
     email, password, nom, prenom, role,
     brigade_id, subdivision_id, direction_regionale_id,
-    matricule, grade, actif,
+    matricule, grade, actif, telephone,
   } = body;
 
   const admin = getSupabaseAdmin();
+
+  const cleanPhone = (telephone ?? "").trim();
 
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
+    user_metadata: {
+      nom,
+      prenom,
+      role,
+      telephone: cleanPhone,
+    },
   });
 
   if (authError) {
@@ -23,7 +31,7 @@ export async function POST(request: Request) {
 
   const uid = authData.user.id;
 
-  const { error: dbError } = await admin.from("users").upsert({
+  const upsertData: Record<string, unknown> = {
     id: uid,
     email,
     nom,
@@ -35,7 +43,10 @@ export async function POST(request: Request) {
     matricule: matricule || null,
     grade: grade || null,
     actif: actif ?? true,
-  });
+    telephone: cleanPhone || null,
+  };
+
+  const { error: dbError } = await admin.from("users").upsert(upsertData);
 
   if (dbError) {
     // Auth user was created — clean up to avoid orphan
