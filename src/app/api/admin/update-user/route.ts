@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
     const cleanPhone = (telephone ?? "").trim();
 
-    // Mettre à jour metadata + password dans Auth si nécessaire
+    // Mettre à jour metadata + password dans Auth (toujours fiable)
     const authUpdates: Record<string, unknown> = {
       user_metadata: {
         nom,
@@ -54,10 +54,20 @@ export async function POST(request: Request) {
     if (actif !== undefined) updates.actif = actif;
     if (telephone !== undefined) updates.telephone = cleanPhone || null;
 
-    const { error: dbError } = await admin
+    let { error: dbError } = await admin
       .from("users")
       .update(updates)
       .eq("id", uid);
+
+    // Fallback si la colonne 'telephone' n'existe pas encore dans la table users
+    if (dbError && dbError.message.includes("telephone")) {
+      delete updates.telephone;
+      const retry = await admin
+        .from("users")
+        .update(updates)
+        .eq("id", uid);
+      dbError = retry.error;
+    }
 
     if (dbError) {
       console.error("[UpdateUser API] Erreur db update:", dbError);

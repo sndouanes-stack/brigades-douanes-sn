@@ -46,7 +46,14 @@ export async function POST(request: Request) {
     telephone: cleanPhone || null,
   };
 
-  const { error: dbError } = await admin.from("users").upsert(upsertData);
+  let { error: dbError } = await admin.from("users").upsert(upsertData);
+
+  // Fallback si la colonne 'telephone' n'existe pas encore dans la table users
+  if (dbError && dbError.message.includes("telephone")) {
+    delete upsertData.telephone;
+    const retry = await admin.from("users").upsert(upsertData);
+    dbError = retry.error;
+  }
 
   if (dbError) {
     // Auth user was created — clean up to avoid orphan

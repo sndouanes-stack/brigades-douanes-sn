@@ -264,18 +264,6 @@ export default function AdminUtilisateursPage() {
       setEditError("Nom et prénom sont obligatoires.");
       return;
     }
-    if ((editForm.role === "AGENT" || editForm.role === "CHEF_BRIGADE") && !editForm.brigadeId) {
-      setEditError("Sélectionnez la brigade.");
-      return;
-    }
-    if (editForm.role === "CHEF_SUBDIVISION" && !editForm.subdivisionId) {
-      setEditError("Sélectionnez la subdivision.");
-      return;
-    }
-    if (editForm.role === "DIRECTEUR_REGIONAL" && !editForm.directionRegionaleId) {
-      setEditError("Sélectionnez la Direction Régionale.");
-      return;
-    }
 
     setEditSaving(true);
     try {
