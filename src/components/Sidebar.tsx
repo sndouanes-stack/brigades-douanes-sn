@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useUserProfile } from "@/lib/useUserProfile";
 import { logout } from "@/lib/logout";
+import { LOGO_DATA_URI } from "@/lib/logoDataUri";
 
 // ── Constantes stable (module-level) ──────────────────────────────────────────
 
@@ -294,7 +295,7 @@ const Sidebar = memo(function Sidebar() {
       <div className="md:hidden fixed top-0 left-0 right-0 z-30 bg-[#4A5C2F] px-4 py-3 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/logo-douanes.png" alt="Logo" width={36} height={36} style={LOGO_STYLE} />
+          <img src={LOGO_DATA_URI} alt="Logo" width={36} height={36} style={LOGO_STYLE} />
           <div>
             <p className="text-white font-bold text-xs leading-tight">Douanes SN</p>
             <p className="text-[#C9A84C] text-[10px] tracking-widest uppercase">Brigades</p>
@@ -345,7 +346,7 @@ const Sidebar = memo(function Sidebar() {
           <div className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/images/logo-douanes.png"
+              src={LOGO_DATA_URI}
               alt="Logo Douanes SN"
               width={44}
               height={44}

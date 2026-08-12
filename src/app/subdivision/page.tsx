@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/lib/useUserProfile";
@@ -52,8 +52,8 @@ function SubdivisionPageContent() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const subdivision = SUBDIVISIONS.find((s) => s.id === profile?.subdivisionId);
-  const brigades = BRIGADES.filter((b) => b.subdivisionId === profile?.subdivisionId);
+  const subdivision = useMemo(() => SUBDIVISIONS.find((s) => s.id === profile?.subdivisionId), [profile?.subdivisionId]);
+  const brigades = useMemo(() => BRIGADES.filter((b) => b.subdivisionId === profile?.subdivisionId), [profile?.subdivisionId]);
 
   const fetchAgentNames = useCallback(async (montageList: MontageData[]) => {
     const allMatricules = new Set<string>();
@@ -97,6 +97,8 @@ function SubdivisionPageContent() {
     setDataLoading(false);
   }, [profile, today, fetchAgentNames, brigades]);
 
+  const fetchedSubdivKey = useRef<string>("");
+
   useEffect(() => {
     if (!loading) {
       if (!user) {
@@ -107,10 +109,14 @@ function SubdivisionPageContent() {
         router.replace(ROLE_HOME[profile.role] || "/dashboard");
         return;
       }
-      fetchMontages();
-      fetchAllAgents();
+      const key = `${profile?.subdivisionId}_${today}`;
+      if (fetchedSubdivKey.current !== key) {
+        fetchedSubdivKey.current = key;
+        fetchMontages();
+        fetchAllAgents();
+      }
     }
-  }, [loading, user, profile, router, fetchMontages, fetchAllAgents]);
+  }, [loading, user, profile, router, today, fetchMontages, fetchAllAgents]);
 
   const totalResume = montages.reduce(
     (acc, m) => {

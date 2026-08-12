@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/lib/useUserProfile";
@@ -27,21 +27,55 @@ interface AgentInfo {
   brigadeId?: string;
 }
 
-type Transaction = { id?: string; type: "recette" | "depense"; montant: number; motif: string; date: string };
-type StatutCourrier = "En attente" | "En cours" | "Traité" | "Envoyé" | "En attente d'envoi";
-type Courrier = { id?: string; numero: string; type: "arrivee" | "depart"; date: string; interlocuteur: string; structure: string; objet: string; urgence: string; statut: StatutCourrier };
-type StatutSaisie = "En instance" | "Transféré" | "Détruit" | "Vendu";
-type Saisie = { id: string; numero: string; date: string; nature: string; quantite: string; unite: string; valeur: number; lieu: string; agent: string; statut: StatutSaisie };
-type Rapport = { id: string; brigade_id: string; date: string; titre: string; contenu: string | null };
+interface Transaction {
+  id: string;
+  type: "recette" | "depense";
+  montant: number;
+  motif: string;
+  date: string;
+}
 
-const STATUT_SAISIE_STYLES: Record<StatutSaisie, string> = {
+interface Courrier {
+  id: string;
+  numero: string;
+  type: "arrivee" | "depart";
+  date: string;
+  interlocuteur: string;
+  structure: string;
+  objet: string;
+  urgence: string;
+  statut: string;
+}
+
+interface Saisie {
+  id: string;
+  numero: string;
+  date: string;
+  nature: string;
+  quantite: number;
+  unite: string;
+  valeur: number;
+  lieu: string;
+  agent: string;
+  statut: string;
+}
+
+interface Rapport {
+  id: string;
+  brigade_id: string;
+  date: string;
+  titre: string;
+  contenu: string;
+}
+
+const STATUT_SAISIE_STYLES: Record<string, string> = {
   "En instance": "bg-orange-100 text-orange-700 border-orange-200",
   "Transféré":   "bg-blue-100 text-blue-700 border-blue-200",
   "Détruit":     "bg-red-100 text-red-700 border-red-200",
   "Vendu":       "bg-green-100 text-green-700 border-green-200",
 };
 
-const STATUT_COURRIER_STYLES: Record<StatutCourrier, string> = {
+const STATUT_COURRIER_STYLES: Record<string, string> = {
   "En attente":         "bg-amber-100 text-amber-700 border-amber-200",
   "En cours":           "bg-blue-100 text-blue-700 border-blue-200",
   "Traité":             "bg-green-100 text-green-700 border-green-200",
@@ -74,7 +108,6 @@ function RegionPageContent() {
   const [expandedSubdivision, setExpandedSubdivision] = useState<string | null>(null);
   const [expandedBrigade, setExpandedBrigade] = useState<string | null>(null);
 
-  // ── Secondary sections ───────────────────────────────────────────────────────
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [correspondances, setCorrespondances] = useState<Courrier[]>([]);
   const [saisies, setSaisies] = useState<Saisie[]>([]);
@@ -84,13 +117,12 @@ function RegionPageContent() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const direction = DIRECTIONS_REGIONALES.find((dr) => dr.id === profile?.directionRegionaleId);
-  const subdivisions = SUBDIVISIONS.filter((s) => s.directionRegionaleId === profile?.directionRegionaleId);
-  const allBrigades = BRIGADES.filter((b) =>
+  const direction = useMemo(() => DIRECTIONS_REGIONALES.find((dr) => dr.id === profile?.directionRegionaleId), [profile?.directionRegionaleId]);
+  const subdivisions = useMemo(() => SUBDIVISIONS.filter((s) => s.directionRegionaleId === profile?.directionRegionaleId), [profile?.directionRegionaleId]);
+  const allBrigades = useMemo(() => BRIGADES.filter((b) =>
     subdivisions.some((s) => s.id === b.subdivisionId)
-  );
+  ), [subdivisions]);
 
-  // ── Fetch secondary section data ─────────────────────────────────────────────
   const fetchSecondaryData = useCallback(async () => {
     if (allBrigades.length === 0) return;
     setSecondaryLoading(true);
@@ -107,13 +139,11 @@ function RegionPageContent() {
       setSaisies((saisiesRes.data ?? []) as Saisie[]);
       setRapports((rapportsRes.data ?? []) as Rapport[]);
     } catch {
-      // Erreur silencieuse
     } finally {
       setSecondaryLoading(false);
     }
   }, [allBrigades]);
 
-  // ── Fetch agent names from montage matricules ──────────────────────────────
   const fetchAgentNames = useCallback(async (montageList: MontageData[]) => {
     const allMatricules = new Set<string>();
     montageList.forEach((m) => Object.keys(m.statuts ?? {}).forEach((mat) => allMatricules.add(mat)));
@@ -131,7 +161,6 @@ function RegionPageContent() {
     setAgentsByMatricule(lookup);
   }, []);
 
-  // ── Fetch all agents of this region (for Personnel tab) ───────────────────
   const fetchAllAgents = useCallback(async () => {
     if (allBrigades.length === 0) return;
     const brigadeIds = allBrigades.map((b) => b.id);
@@ -144,19 +173,19 @@ function RegionPageContent() {
     setAllAgents(agents);
   }, [allBrigades]);
 
-  // ── Fetch today's montages for this region ────────────────────────────────
   const fetchMontages = useCallback(async () => {
     if (!profile?.directionRegionaleId) return;
     setDataLoading(true);
     const { data: montageRows } = await supabase.from("montages").select("*").eq("date", today);
     const data = (montageRows ?? []) as MontageData[];
-    // Filter only montages for brigades of this region
     const regionBrigadeIds = new Set(allBrigades.map((b) => b.id));
     const filtered = data.filter((m) => regionBrigadeIds.has(m.brigade_id));
     setMontages(filtered);
     await fetchAgentNames(filtered);
     setDataLoading(false);
   }, [profile, today, fetchAgentNames, allBrigades]);
+
+  const fetchedRegionKey = useRef<string>("");
 
   useEffect(() => {
     if (!loading) {
@@ -168,11 +197,15 @@ function RegionPageContent() {
         router.replace(ROLE_HOME[profile.role] || "/dashboard");
         return;
       }
-      fetchMontages();
-      fetchAllAgents();
-      fetchSecondaryData();
+      const key = `${profile?.directionRegionaleId}_${today}`;
+      if (fetchedRegionKey.current !== key) {
+        fetchedRegionKey.current = key;
+        fetchMontages();
+        fetchAllAgents();
+        fetchSecondaryData();
+      }
     }
-  }, [loading, user, profile, router, fetchMontages, fetchAllAgents, fetchSecondaryData]);
+  }, [loading, user, profile, router, today, fetchMontages, fetchAllAgents, fetchSecondaryData]);
 
   // ── Totaux ────────────────────────────────────────────────────────────────
   const totalResume = montages.reduce(

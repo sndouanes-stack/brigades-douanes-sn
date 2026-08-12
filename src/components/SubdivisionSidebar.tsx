@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useUserProfile } from "@/lib/useUserProfile";
 import { SUBDIVISIONS } from "@/lib/roles";
 import { logout } from "@/lib/logout";
+import { LOGO_DATA_URI } from "@/lib/logoDataUri";
 
 const NAV_ITEMS = [
   {
@@ -179,7 +180,7 @@ const SubdivisionSidebar = memo(function SubdivisionSidebar() {
       <div className="md:hidden fixed top-0 left-0 right-0 z-30 bg-[#4A5C2F] px-4 py-3 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/logo-douanes.png" alt="Logo" width={36} height={36} style={LOGO_STYLE} />
+          <img src={LOGO_DATA_URI} alt="Logo" width={36} height={36} style={LOGO_STYLE} />
           <div>
             <p className="text-white font-bold text-xs leading-tight">Douanes SN</p>
             <p className="text-[#C9A84C] text-[10px] tracking-widest uppercase">Subdivision</p>
@@ -217,7 +218,7 @@ const SubdivisionSidebar = memo(function SubdivisionSidebar() {
         <div className="px-6 py-6 border-b border-white/10 shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/images/logo-douanes.png" alt="Logo" width={44} height={44} style={LOGO_STYLE} />
+            <img src={LOGO_DATA_URI} alt="Logo" width={44} height={44} style={LOGO_STYLE} />
             <div>
               <p className="text-white font-bold text-sm leading-tight">Douanes SN</p>
               <p className="text-[#C9A84C] text-xs tracking-widest uppercase">Subdivision</p>
