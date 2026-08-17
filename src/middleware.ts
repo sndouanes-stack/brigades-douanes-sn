@@ -41,7 +41,13 @@ export async function middleware(request: NextRequest) {
   const roleCookie = rawRole ? normalizeRole(rawRole) : null;
 
   // Vérifie la session Supabase (rafraîchit le token si nécessaire)
-  const { data: { user } } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch (err) {
+    console.error("[Middleware] Erreur Supabase getUser:", err);
+  }
 
   const isAuthenticated = !!user || !!sessionCookie;
 

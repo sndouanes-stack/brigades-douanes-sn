@@ -39,7 +39,7 @@ const EMPTY_FORM: Omit<QuittanceData, "id" | "numero" | "montantLettres" | "crea
 
 // ── Composant ─────────────────────────────────────────────────────────────────
 export default function QuittancesPage() {
-  const { user, loading } = useUserProfile();
+  const { user, profile, loading } = useUserProfile();
   const { isReadOnly } = useRole();
   const router = useRouter();
   const printRef = useRef<HTMLDivElement>(null);
@@ -62,14 +62,42 @@ export default function QuittancesPage() {
     if (!loading && !user) router.replace("/login");
   }, [user, loading, router]);
 
-  // Charger les quittances — tri client-side par date desc (évite l'index composite Firestore)
+  // Charger les quittances — tri client-side par date desc
   const fetchQuittances = useCallback(async () => {
     if (!user) return;
     setLoadingData(true);
     try {
-      const { data } = await supabase.from("quittances").select("*");
-      const list = (data ?? []) as QuittanceData[];
-      // Tri décroissant : d'abord par date ISO, puis par numéro
+      const { data, error: err } = await supabase.from("quittances").select("*");
+      if (err) {
+        console.error("Erreur fetch quittances :", err);
+        return;
+      }
+      const list = (data ?? []).map((q: Record<string, unknown>) => {
+        const fullContrib = (q.contribuable as string) || "";
+        const parts = fullContrib.trim().split(" ");
+        const prenom = (q.prenom as string) || (parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0] || "");
+        const nom = (q.nom as string) || (parts.length > 1 ? parts[parts.length - 1] : "");
+        const amount = typeof q.montant === "number" ? q.montant : parseFloat(String(q.montant ?? 0));
+        return {
+          id: String(q.id ?? ""),
+          numero: String(q.numero ?? ""),
+          date: String(q.date ?? ""),
+          nom,
+          prenom,
+          adresse: String(q.adresse ?? ""),
+          pieceIdentite: String(q.piece_identite ?? q.pieceIdentite ?? ""),
+          profession: String(q.profession ?? ""),
+          montant: amount,
+          montantLettres: String(q.montant_lettres ?? q.montantLettres ?? nombreEnLettres(amount)),
+          nature: (q.nature as NaturePaiement) || (q.motif as NaturePaiement) || "Amende",
+          referenceAC: String(q.reference_ac ?? q.referenceAC ?? ""),
+          lieu: String(q.lieu ?? "Dakar"),
+          chefBrigade: String(q.chef_brigade ?? q.chefBrigade ?? ""),
+          brigade: String(q.brigade ?? "Brigade Mobile"),
+          createdAt: q.created_at,
+        } as QuittanceData;
+      });
+
       list.sort((a, b) => {
         if (b.date !== a.date) return b.date.localeCompare(a.date);
         return b.numero.localeCompare(a.numero);
@@ -126,11 +154,29 @@ export default function QuittancesPage() {
     setSaving(true);
     setError("");
     try {
-      const { data: newRow } = await supabase
+      const dbPayload = {
+        numero: preview.numero,
+        date: preview.date,
+        contribuable: `${preview.prenom} ${preview.nom}`.trim(),
+        montant: preview.montant,
+        motif: preview.nature,
+        brigade_id: profile?.brigadeId || null,
+        created_by: profile?.email || user?.email || "",
+      };
+
+      const { data: newRow, error: saveErr } = await supabase
         .from("quittances")
-        .insert({ ...preview })
+        .insert(dbPayload)
         .select()
         .single();
+
+      if (saveErr) {
+        console.error("Erreur sauvegarde quittance :", saveErr);
+        setError(`Erreur lors de l'enregistrement dans la base de données : ${saveErr.message}`);
+        setSaving(false);
+        return;
+      }
+
       const saved: QuittanceData = { ...preview, id: newRow?.id ?? "" };
       setQuittances((prev) => {
         const withoutDupe = prev.filter((q) => q.id !== saved.id);
@@ -141,13 +187,14 @@ export default function QuittancesPage() {
         });
         return updated;
       });
+
+      handlePrint();
     } catch (err) {
-      console.error("Erreur sauvegarde Supabase :", err);
-      // Supabase non configuré ou erreur réseau → on continue quand même vers l'impression
+      console.error("Exception sauvegarde Supabase :", err);
+      setError(`Erreur imprévue : ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSaving(false);
     }
-    handlePrint();
   }
 
   function handlePrint() {

@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { LOGO_DATA_URI } from "@/lib/logoDataUri";
 import { type QuittanceData } from "@/app/dashboard/quittances/types";
 
 interface Props {
@@ -49,11 +49,10 @@ export default function QuittanceReceipt({ data, exemplaire }: Props) {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6mm", marginBottom: "2mm" }}>
             {/* Logo officiel Douanes */}
             <div style={{ width: "14mm", height: "14mm", flexShrink: 0 }}>
-              <Image
-                src="/images/logo-douanes.png"
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={LOGO_DATA_URI}
                 alt="Logo Douanes Sénégal"
-                width={53}
-                height={53}
                 style={{ width: "100%", height: "100%", objectFit: "contain" }}
               />
             </div>
