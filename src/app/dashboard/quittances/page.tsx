@@ -153,8 +153,8 @@ export default function QuittancesPage() {
   }
 
   function handleEdit(q: QuittanceData) {
-    setEditingId(q.id);
-    setEditingNumero(q.numero);
+    setEditingId(q.id ?? null);
+    setEditingNumero(q.numero ?? null);
     setForm({
       brigade: q.brigade || "Brigade Mobile de Dakar-Pikine",
       nom: q.nom || "",
