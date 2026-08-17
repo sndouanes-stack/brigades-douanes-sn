@@ -143,10 +143,13 @@ function RegionPageContent() {
         txData = (fallbackTx ?? []) as Transaction[];
       }
 
-      setTransactions(txData.map((d) => ({
-        ...d,
-        motif: (d as Record<string, unknown>).libelle as string ?? (d as Record<string, unknown>).motif as string ?? "",
-      })) as Transaction[]);
+      setTransactions(txData.map((d) => {
+        const item = d as unknown as Record<string, unknown>;
+        return {
+          ...d,
+          motif: (item.libelle as string) ?? (item.motif as string) ?? "",
+        };
+      }) as Transaction[]);
       setCorrespondances((corrRes.data ?? []) as Courrier[]);
       setSaisies((saisiesRes.data ?? []) as Saisie[]);
       setRapports((rapportsRes.data ?? []) as Rapport[]);
