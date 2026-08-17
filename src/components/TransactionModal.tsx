@@ -15,6 +15,7 @@ export interface Transaction {
   montant: number;
   motif: string;
   date: string;
+  brigade_id?: string;
 }
 
 export default function TransactionModal({ type, onClose, onSaved }: Props) {

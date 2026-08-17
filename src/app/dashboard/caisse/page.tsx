@@ -492,7 +492,7 @@ export default function CaissePage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-xs font-medium text-[#4A5C2F] whitespace-nowrap">
-                          {BRIGADES.find((b) => b.id === (tx as Record<string, unknown>).brigade_id)?.nom || ((tx as Record<string, unknown>).brigade_id as string) || "—"}
+                          {BRIGADES.find((b) => b.id === tx.brigade_id)?.nom || tx.brigade_id || "—"}
                         </td>
                         <td className="px-6 py-4 text-gray-700 max-w-xs truncate">{tx.motif}</td>
                         <td className="px-6 py-4 text-gray-500 font-medium whitespace-nowrap">
