@@ -52,6 +52,8 @@ export default function QuittancesPage() {
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<QuittanceData | null>(null);
   const [view, setView] = useState<"form" | "liste">("form");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingNumero, setEditingNumero] = useState<string | null>(null);
 
   const todayLabel = new Date().toLocaleDateString("fr-SN", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -134,7 +136,8 @@ export default function QuittancesPage() {
   function buildData(): QuittanceData {
     return {
       ...form,
-      numero: nextNumero,
+      id: editingId || "",
+      numero: editingNumero || nextNumero,
       montant: parseInt(montantStr.replace(/\s/g, ""), 10) || 0,
       montantLettres,
     };
@@ -147,6 +150,29 @@ export default function QuittancesPage() {
     if (montant <= 0) { setError("Le montant doit être supérieur à zéro."); return; }
     if (!form.chefBrigade.trim()) { setError("Le nom du Chef de Brigade est obligatoire."); return; }
     setPreview(buildData());
+  }
+
+  function handleEdit(q: QuittanceData) {
+    setEditingId(q.id);
+    setEditingNumero(q.numero);
+    setForm({
+      brigade: q.brigade || "Brigade Mobile de Dakar-Pikine",
+      nom: q.nom || "",
+      prenom: q.prenom || "",
+      adresse: q.adresse || "",
+      pieceIdentite: q.pieceIdentite || "",
+      profession: q.profession || "",
+      montant: q.montant || 0,
+      nature: q.nature || "Amende",
+      referenceAC: q.referenceAC || "",
+      lieu: q.lieu || "Dakar",
+      date: q.date || new Date().toISOString().split("T")[0],
+      chefBrigade: q.chefBrigade || "",
+    });
+    setMontantStr(q.montant > 0 ? String(q.montant) : "");
+    setPreview(null);
+    setError("");
+    setView("form");
   }
 
   async function handleSaveAndPrint() {
@@ -164,29 +190,48 @@ export default function QuittancesPage() {
         created_by: profile?.email || user?.email || "",
       };
 
-      const { data: newRow, error: saveErr } = await supabase
-        .from("quittances")
-        .insert(dbPayload)
-        .select()
-        .single();
+      if (editingId) {
+        const { error: saveErr } = await supabase
+          .from("quittances")
+          .update(dbPayload)
+          .eq("id", editingId);
 
-      if (saveErr) {
-        console.error("Erreur sauvegarde quittance :", saveErr);
-        setError(`Erreur lors de l'enregistrement dans la base de données : ${saveErr.message}`);
-        setSaving(false);
-        return;
-      }
+        if (saveErr) {
+          console.error("Erreur mise à jour quittance :", saveErr);
+          setError(`Erreur lors de la mise à jour : ${saveErr.message}`);
+          setSaving(false);
+          return;
+        }
 
-      const saved: QuittanceData = { ...preview, id: newRow?.id ?? "" };
-      setQuittances((prev) => {
-        const withoutDupe = prev.filter((q) => q.id !== saved.id);
-        const updated = [saved, ...withoutDupe];
-        updated.sort((a, b) => {
-          if (b.date !== a.date) return b.date.localeCompare(a.date);
-          return b.numero.localeCompare(a.numero);
+        const updated: QuittanceData = { ...preview, id: editingId };
+        setQuittances((prev) => prev.map((q) => (q.id === editingId ? updated : q)));
+        setEditingId(null);
+        setEditingNumero(null);
+      } else {
+        const { data: newRow, error: saveErr } = await supabase
+          .from("quittances")
+          .insert(dbPayload)
+          .select()
+          .single();
+
+        if (saveErr) {
+          console.error("Erreur sauvegarde quittance :", saveErr);
+          setError(`Erreur lors de l'enregistrement dans la base de données : ${saveErr.message}`);
+          setSaving(false);
+          return;
+        }
+
+        const saved: QuittanceData = { ...preview, id: newRow?.id ?? "" };
+        setQuittances((prev) => {
+          const withoutDupe = prev.filter((q) => q.id !== saved.id);
+          const updated = [saved, ...withoutDupe];
+          updated.sort((a, b) => {
+            if (b.date !== a.date) return b.date.localeCompare(a.date);
+            return b.numero.localeCompare(a.numero);
+          });
+          return updated;
         });
-        return updated;
-      });
+      }
 
       handlePrint();
     } catch (err) {
@@ -260,6 +305,8 @@ export default function QuittancesPage() {
 
   function handleReset() {
     setPreview(null);
+    setEditingId(null);
+    setEditingNumero(null);
     setForm(EMPTY_FORM);
     setMontantStr("");
     setError("");
@@ -288,7 +335,7 @@ export default function QuittancesPage() {
           <div className="flex items-center gap-3">
             {!isReadOnly && (
               <span className="font-mono text-sm bg-[#4A5C2F]/10 text-[#4A5C2F] px-3 py-1.5 rounded-lg font-bold">
-                Prochain : {nextNumero}
+                {editingNumero ? `Édition : ${editingNumero}` : `Prochain : ${nextNumero}`}
               </span>
             )}
             {!isReadOnly && (
@@ -297,7 +344,7 @@ export default function QuittancesPage() {
                   <button key={v} onClick={() => setView(v)}
                     className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all
                       ${view === v ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-                    {v === "form" ? "Nouvelle quittance" : "Historique"}
+                    {v === "form" ? (editingId ? "Édition quittance" : "Nouvelle quittance") : "Historique"}
                   </button>
                 ))}
               </div>
@@ -315,18 +362,30 @@ export default function QuittancesPage() {
               {/* Formulaire */}
               <div className="w-full max-w-lg shrink-0">
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="bg-[#4A5C2F] px-6 py-4 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-[#C9A84C] flex items-center justify-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
-                        viewBox="0 0 24 24" stroke="#4A5C2F" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round"
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
+                  <div className="bg-[#4A5C2F] px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-[#C9A84C] flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                          viewBox="0 0 24 24" stroke="#4A5C2F" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-white font-bold text-sm">
+                          {editingId ? "Modification de quittance" : "Saisie de quittance"}
+                        </p>
+                        <p className="text-[#C9A84C] text-xs font-mono">{editingNumero || nextNumero}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-white font-bold text-sm">Saisie de quittance</p>
-                      <p className="text-[#C9A84C] text-xs font-mono">{nextNumero}</p>
-                    </div>
+                    {editingId && (
+                      <button
+                        onClick={handleReset}
+                        className="text-xs bg-white/20 hover:bg-white/30 text-white font-medium px-2.5 py-1 rounded transition-colors"
+                      >
+                        Annuler l'édition
+                      </button>
+                    )}
                   </div>
 
                   <div className="p-6 space-y-4">
@@ -462,10 +521,10 @@ export default function QuittancesPage() {
                           Vérifiez les informations puis enregistrez et imprimez
                         </p>
                       </div>
-                      <button onClick={handleReset}
+                      <button onClick={() => setPreview(null)}
                         className="px-4 py-2 text-sm text-gray-500 border border-gray-200
                           rounded-lg hover:bg-gray-50 transition-colors">
-                        Modifier
+                        Modifier la saisie
                       </button>
                       <button onClick={handleSaveAndPrint} disabled={saving}
                         className="flex items-center gap-2 px-5 py-2 text-sm font-semibold
@@ -483,7 +542,7 @@ export default function QuittancesPage() {
                               d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                           </svg>
                         )}
-                        Enregistrer & Imprimer
+                        {editingId ? "Mettre à jour & Imprimer" : "Enregistrer & Imprimer"}
                       </button>
                     </div>
 
@@ -539,7 +598,7 @@ export default function QuittancesPage() {
                   <p className="text-xs text-gray-400 mt-0.5">{quittances.length} quittance(s) émise(s)</p>
                 </div>
                 {!isReadOnly && (
-                  <button onClick={() => setView("form")}
+                  <button onClick={() => { handleReset(); setView("form"); }}
                     className="flex items-center gap-2 bg-[#4A5C2F] hover:bg-[#3b4a25] text-white
                       text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
                     Nouvelle quittance
@@ -559,7 +618,7 @@ export default function QuittancesPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        {["N° Quittance", "Date", "Redevable", "Nature", "Montant (FCFA)", "Chef Brigade"].map((h) => (
+                        {["N° Quittance", "Date", "Redevable", "Nature", "Montant (FCFA)", "Chef Brigade", "Actions"].map((h) => (
                           <th key={h} className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                             {h}
                           </th>
@@ -594,6 +653,35 @@ export default function QuittancesPage() {
                             {new Intl.NumberFormat("fr-SN").format(q.montant)}
                           </td>
                           <td className="px-6 py-4 text-gray-600">{q.chefBrigade}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              {!isReadOnly && (
+                                <button
+                                  onClick={() => handleEdit(q)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#4A5C2F] bg-[#4A5C2F]/10 hover:bg-[#4A5C2F]/20 rounded-lg transition-colors"
+                                  title="Modifier cette quittance"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  Modifier
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  setPreview(q);
+                                  setView("form");
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                title="Voir / Imprimer"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                </svg>
+                                Imprimer
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
