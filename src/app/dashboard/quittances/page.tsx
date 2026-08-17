@@ -383,7 +383,7 @@ export default function QuittancesPage() {
                         onClick={handleReset}
                         className="text-xs bg-white/20 hover:bg-white/30 text-white font-medium px-2.5 py-1 rounded transition-colors"
                       >
-                        Annuler l'édition
+                        Annuler l&apos;édition
                       </button>
                     )}
                   </div>
