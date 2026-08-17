@@ -8,7 +8,7 @@ import Sidebar from "@/components/Sidebar";
 import TransactionModal, { type Transaction, type TypeTransaction } from "@/components/TransactionModal";
 import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import { useRole } from "@/lib/useRole";
-import { BRIGADES, SUBDIVISIONS, DIRECTIONS_REGIONALES } from "@/lib/roles";
+import { BRIGADES, SUBDIVISIONS, DIRECTIONS_REGIONALES, getBrigadesByDirection } from "@/lib/roles";
 
 // ── Utilitaires ───────────────────────────────────────────────────────────────
 function formatFCFA(n: number) {
@@ -51,7 +51,17 @@ export default function CaissePage() {
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (profile?.brigadeId) {
+      if (profile?.role === "CHEF_SUBDIVISION" && profile?.subdivisionId) {
+        const subdivBrigadeIds = BRIGADES.filter((b) => b.subdivisionId === profile.subdivisionId).map((b) => b.id);
+        if (subdivBrigadeIds.length > 0) {
+          query = query.in("brigade_id", subdivBrigadeIds);
+        }
+      } else if (profile?.role === "DIRECTEUR_REGIONAL" && profile?.directionRegionaleId) {
+        const regionBrigadeIds = getBrigadesByDirection(profile.directionRegionaleId).map((b) => b.id);
+        if (regionBrigadeIds.length > 0) {
+          query = query.in("brigade_id", regionBrigadeIds);
+        }
+      } else if (profile?.brigadeId && profile?.role !== "ADMIN") {
         query = query.eq("brigade_id", profile.brigadeId);
       }
 
@@ -67,7 +77,7 @@ export default function CaissePage() {
     } finally {
       setLoadingTx(false);
     }
-  }, [user, profile?.brigadeId]);
+  }, [user, profile]);
 
   useEffect(() => {
     fetchTransactions();
@@ -459,6 +469,7 @@ export default function CaissePage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+                      <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Brigade</th>
                       <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Motif</th>
                       <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Date</th>
                       <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Montant</th>
@@ -479,6 +490,9 @@ export default function CaissePage() {
                             </svg>
                             {tx.type === "recette" ? "Recette" : "Dépense"}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 text-xs font-medium text-[#4A5C2F] whitespace-nowrap">
+                          {BRIGADES.find((b) => b.id === (tx as Record<string, unknown>).brigade_id)?.nom || ((tx as Record<string, unknown>).brigade_id as string) || "—"}
                         </td>
                         <td className="px-6 py-4 text-gray-700 max-w-xs truncate">{tx.motif}</td>
                         <td className="px-6 py-4 text-gray-500 font-medium whitespace-nowrap">

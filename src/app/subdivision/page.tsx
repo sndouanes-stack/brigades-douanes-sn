@@ -26,6 +26,64 @@ interface AgentInfo {
   brigadeId?: string;
 }
 
+interface Transaction {
+  id: string;
+  type: "recette" | "depense";
+  montant: number;
+  motif: string;
+  date: string;
+  brigade_id?: string;
+}
+
+interface Courrier {
+  id: string;
+  numero: string;
+  type: "arrivee" | "depart";
+  date: string;
+  interlocuteur: string;
+  structure: string;
+  objet: string;
+  urgence: string;
+  statut: string;
+}
+
+interface Saisie {
+  id: string;
+  numero: string;
+  date: string;
+  nature: string;
+  quantite: number;
+  unite: string;
+  valeur: number;
+  lieu: string;
+  agent: string;
+  statut: string;
+  brigade_id?: string;
+}
+
+interface Rapport {
+  id: string;
+  brigade_id: string;
+  date: string;
+  titre: string;
+  contenu: string;
+}
+
+const STATUT_SAISIE_STYLES: Record<string, string> = {
+  "En instance": "bg-orange-100 text-orange-700 border-orange-200",
+  "Transféré":   "bg-blue-100 text-blue-700 border-blue-200",
+  "Détruit":     "bg-red-100 text-red-700 border-red-200",
+  "Vendu":       "bg-green-100 text-green-700 border-green-200",
+};
+
+const STATUT_COURRIER_STYLES: Record<string, string> = {
+  "En attente":         "bg-amber-100 text-amber-700 border-amber-200",
+  "En cours":           "bg-blue-100 text-blue-700 border-blue-200",
+  "Traité":             "bg-green-100 text-green-700 border-green-200",
+  "Envoyé":             "bg-green-100 text-green-700 border-green-200",
+  "En attente d'envoi": "bg-amber-100 text-amber-700 border-amber-200",
+};
+
 function computeResume(statuts: Record<string, Statut>) {
   const counts = { presents: 0, patrouilles: 0, barrages: 0, permissionnaires: 0, repos: 0 };
   Object.values(statuts ?? {}).forEach((s) => {
@@ -50,10 +108,48 @@ function SubdivisionPageContent() {
   const [dataLoading, setDataLoading] = useState(true);
   const [selectedBrigade, setSelectedBrigade] = useState<string | null>(null);
 
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [correspondances, setCorrespondances] = useState<Courrier[]>([]);
+  const [saisies, setSaisies] = useState<Saisie[]>([]);
+  const [rapports, setRapports] = useState<Rapport[]>([]);
+  const [secondaryLoading, setSecondaryLoading] = useState(false);
+  const [corrTab, setCorrTab] = useState<"arrivee" | "depart">("arrivee");
+
   const today = new Date().toISOString().split("T")[0];
 
   const subdivision = useMemo(() => SUBDIVISIONS.find((s) => s.id === profile?.subdivisionId), [profile?.subdivisionId]);
   const brigades = useMemo(() => BRIGADES.filter((b) => b.subdivisionId === profile?.subdivisionId), [profile?.subdivisionId]);
+
+  const fetchSecondaryData = useCallback(async () => {
+    if (brigades.length === 0) return;
+    setSecondaryLoading(true);
+    try {
+      const brigadeIds = brigades.map((b) => b.id);
+      const [txRes, corrRes, saisiesRes, rapportsRes] = await Promise.all([
+        supabase.from("transactions").select("*").in("brigade_id", brigadeIds).order("created_at", { ascending: false }).limit(200),
+        supabase.from("correspondances").select("*").order("date", { ascending: false }).limit(200),
+        supabase.from("saisies").select("*").order("date", { ascending: false }).limit(200),
+        supabase.from("rapports").select("*").in("brigade_id", brigadeIds).order("date", { ascending: false }).limit(200),
+      ]);
+
+      let txData = (txRes.data ?? []) as Transaction[];
+      if (txData.length === 0) {
+        const { data: fallbackTx } = await supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(200);
+        txData = (fallbackTx ?? []) as Transaction[];
+      }
+
+      setTransactions(txData.map((d) => ({
+        ...d,
+        motif: (d as Record<string, unknown>).libelle as string ?? (d as Record<string, unknown>).motif as string ?? "",
+      })) as Transaction[]);
+      setCorrespondances((corrRes.data ?? []) as Courrier[]);
+      setSaisies((saisiesRes.data ?? []) as Saisie[]);
+      setRapports((rapportsRes.data ?? []) as Rapport[]);
+    } catch {
+    } finally {
+      setSecondaryLoading(false);
+    }
+  }, [brigades]);
 
   const fetchAgentNames = useCallback(async (montageList: MontageData[]) => {
     const allMatricules = new Set<string>();
@@ -89,7 +185,6 @@ function SubdivisionPageContent() {
     setDataLoading(true);
     const { data: montageRows } = await supabase.from("montages").select("*").eq("date", today);
     const data = (montageRows ?? []) as MontageData[];
-    // Filter only montages for brigades of this subdivision
     const subdivBrigadeIds = new Set(brigades.map((b) => b.id));
     const filtered = data.filter((m) => subdivBrigadeIds.has(m.brigade_id));
     setMontages(filtered);
@@ -114,9 +209,10 @@ function SubdivisionPageContent() {
         fetchedSubdivKey.current = key;
         fetchMontages();
         fetchAllAgents();
+        fetchSecondaryData();
       }
     }
-  }, [loading, user, profile, router, today, fetchMontages, fetchAllAgents]);
+  }, [loading, user, profile, router, today, fetchMontages, fetchAllAgents, fetchSecondaryData]);
 
   const totalResume = montages.reduce(
     (acc, m) => {
@@ -424,15 +520,230 @@ function SubdivisionPageContent() {
             </div>
           )}
 
-          {/* ── Sections à venir ────────────────────────────────────────── */}
-          {(vue === "saisies" || vue === "caisse" || vue === "correspondances" || vue === "rapports") && (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 mb-4 opacity-30" fill="none"
-                viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round"
-                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
-              <p className="text-sm font-medium capitalize">{vue.replace("-", " ")} — section en cours de développement</p>
+          {/* ── CAISSE ──────────────────────────────────────────────────── */}
+          {vue === "caisse" && (() => {
+            const recettes = transactions.filter((t) => t.type === "recette");
+            const depenses = transactions.filter((t) => t.type === "depense");
+            const totalR = recettes.reduce((s, t) => s + t.montant, 0);
+            const totalD = depenses.reduce((s, t) => s + t.montant, 0);
+            return (
+              <div className="space-y-4">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Caisse — Subdivisions & Brigades</h2>
+                {/* KPIs */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Recettes</p>
+                    <p className="text-xl font-bold text-green-600">{totalR.toLocaleString("fr-SN")} FCFA</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{recettes.length} transaction{recettes.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Dépenses</p>
+                    <p className="text-xl font-bold text-red-600">{totalD.toLocaleString("fr-SN")} FCFA</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{depenses.length} transaction{depenses.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Solde net</p>
+                    <p className={`text-xl font-bold ${totalR - totalD >= 0 ? "text-[#4A5C2F]" : "text-red-600"}`}>
+                      {(totalR - totalD).toLocaleString("fr-SN")} FCFA
+                    </p>
+                  </div>
+                </div>
+                {/* Liste */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-gray-100">
+                    <p className="font-semibold text-gray-800 text-sm">Historique des transactions ({transactions.length})</p>
+                  </div>
+                  {secondaryLoading ? (
+                    <div className="flex justify-center py-10"><div className="w-5 h-5 border-2 border-[#4A5C2F] border-t-transparent rounded-full animate-spin" /></div>
+                  ) : transactions.length === 0 ? (
+                    <p className="text-center text-sm text-gray-400 py-8">Aucune transaction enregistrée.</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Brigade</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Motif</th>
+                          <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Montant</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {transactions.map((t, i) => (
+                          <tr key={t.id ?? i} className="hover:bg-gray-50">
+                            <td className="px-5 py-3 text-xs text-gray-500">
+                              {t.date ? new Date(t.date + "T12:00:00").toLocaleDateString("fr-SN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${t.type === "recette" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                                {t.type === "recette" ? "Recette" : "Dépense"}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-xs font-medium text-[#4A5C2F]">
+                              {BRIGADES.find((b) => b.id === t.brigade_id)?.nom || t.brigade_id || "—"}
+                            </td>
+                            <td className="px-5 py-3 text-gray-700 text-sm">{t.motif}</td>
+                            <td className={`px-5 py-3 text-right font-semibold text-sm ${t.type === "recette" ? "text-green-600" : "text-red-600"}`}>
+                              {t.montant.toLocaleString("fr-SN")} F
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── CORRESPONDANCES ──────────────────────────────────────────── */}
+          {vue === "correspondances" && (() => {
+            const filtered = correspondances.filter((c) => c.type === corrTab);
+            return (
+              <div className="space-y-4">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Correspondances</h2>
+                <div className="flex gap-2">
+                  {(["arrivee", "depart"] as const).map((tab) => (
+                    <button key={tab} onClick={() => setCorrTab(tab)}
+                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${corrTab === tab ? "bg-[#4A5C2F] text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"}`}>
+                      {tab === "arrivee" ? "Courrier arrivée" : "Courrier départ"}
+                      <span className="ml-2 text-xs opacity-70">({correspondances.filter((c) => c.type === tab).length})</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  {secondaryLoading ? (
+                    <div className="flex justify-center py-10"><div className="w-5 h-5 border-2 border-[#4A5C2F] border-t-transparent rounded-full animate-spin" /></div>
+                  ) : filtered.length === 0 ? (
+                    <p className="text-center text-sm text-gray-400 py-8">Aucun courrier enregistré.</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">N°</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Objet</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Interlocuteur</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {filtered.map((c, i) => (
+                          <tr key={c.id ?? i} className="hover:bg-gray-50">
+                            <td className="px-5 py-3 font-mono text-xs text-gray-400">{c.numero}</td>
+                            <td className="px-5 py-3 text-xs text-gray-500">
+                              {c.date ? new Date(c.date + "T12:00:00").toLocaleDateString("fr-SN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                            </td>
+                            <td className="px-5 py-3 text-gray-800 font-medium">{c.objet}</td>
+                            <td className="px-5 py-3 text-xs text-gray-500">{c.interlocuteur}{c.structure && ` · ${c.structure}`}</td>
+                            <td className="px-5 py-3">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${STATUT_COURRIER_STYLES[c.statut] ?? "bg-gray-100 text-gray-500 border-gray-200"}`}>
+                                {c.statut}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── SAISIES ET RÈGLEMENTS ────────────────────────────────────── */}
+          {vue === "saisies" && (() => {
+            const totalValeur = saisies.reduce((s, x) => s + (x.valeur || 0), 0);
+            return (
+              <div className="space-y-4">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Saisies et Règlements</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Total saisies</p>
+                    <p className="text-2xl font-bold text-[#4A5C2F]">{saisies.length}</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Valeur estimée</p>
+                    <p className="text-2xl font-bold text-[#4A5C2F]">{totalValeur.toLocaleString("fr-SN")} FCFA</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  {secondaryLoading ? (
+                    <div className="flex justify-center py-10"><div className="w-5 h-5 border-2 border-[#4A5C2F] border-t-transparent rounded-full animate-spin" /></div>
+                  ) : saisies.length === 0 ? (
+                    <p className="text-center text-sm text-gray-400 py-8">Aucune saisie enregistrée.</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">N°</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nature</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lieu</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent</th>
+                          <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Valeur</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {saisies.map((s) => (
+                          <tr key={s.id} className="hover:bg-gray-50">
+                            <td className="px-5 py-3 font-mono text-xs text-[#4A5C2F] font-bold">{s.numero}</td>
+                            <td className="px-5 py-3 text-xs text-gray-500">
+                              {s.date ? new Date(s.date + "T12:00:00").toLocaleDateString("fr-SN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                            </td>
+                            <td className="px-5 py-3 text-gray-800 font-medium">{s.nature}</td>
+                            <td className="px-5 py-3 text-xs text-gray-500">{s.lieu}</td>
+                            <td className="px-5 py-3 text-xs text-gray-500">{s.agent}</td>
+                            <td className="px-5 py-3 text-right text-sm font-semibold text-[#4A5C2F]">
+                              {s.valeur > 0 ? `${s.valeur.toLocaleString("fr-SN")} F` : "—"}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${STATUT_SAISIE_STYLES[s.statut] ?? "bg-gray-100 text-gray-500 border-gray-200"}`}>
+                                {s.statut}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── RAPPORTS ────────────────────────────────────────────────── */}
+          {vue === "rapports" && (
+            <div className="space-y-4">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Rapports des brigades</h2>
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                {secondaryLoading ? (
+                  <div className="flex justify-center py-10"><div className="w-5 h-5 border-2 border-[#4A5C2F] border-t-transparent rounded-full animate-spin" /></div>
+                ) : rapports.length === 0 ? (
+                  <p className="text-center text-sm text-gray-400 py-8">Aucun rapport soumis par les brigades.</p>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {rapports.map((r) => {
+                      const brigade = BRIGADES.find((b) => b.id === r.brigade_id);
+                      return (
+                        <div key={r.id} className="p-5 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-gray-800 text-sm">{r.titre}</span>
+                              <span className="text-xs text-gray-400">· {brigade?.nom ?? r.brigade_id}</span>
+                            </div>
+                            <span className="text-xs text-gray-400">
+                              {r.date ? new Date(r.date + "T12:00:00").toLocaleDateString("fr-SN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 line-clamp-2">{r.contenu}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

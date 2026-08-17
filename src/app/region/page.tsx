@@ -33,6 +33,7 @@ interface Transaction {
   montant: number;
   motif: string;
   date: string;
+  brigade_id?: string;
 }
 
 interface Courrier {
@@ -58,6 +59,7 @@ interface Saisie {
   lieu: string;
   agent: string;
   statut: string;
+  brigade_id?: string;
 }
 
 interface Rapport {
@@ -129,12 +131,22 @@ function RegionPageContent() {
     try {
       const brigadeIds = allBrigades.map((b) => b.id);
       const [txRes, corrRes, saisiesRes, rapportsRes] = await Promise.all([
-        supabase.from("transactions").select("id, type, montant, motif, date").order("date", { ascending: false }).limit(200),
+        supabase.from("transactions").select("*").in("brigade_id", brigadeIds).order("created_at", { ascending: false }).limit(200),
         supabase.from("correspondances").select("id, numero, type, date, interlocuteur, structure, objet, urgence, statut").order("date", { ascending: false }).limit(200),
         supabase.from("saisies").select("id, numero, date, nature, quantite, unite, valeur, lieu, agent, statut").order("date", { ascending: false }).limit(200),
         supabase.from("rapports").select("id, brigade_id, date, titre, contenu").in("brigade_id", brigadeIds).order("date", { ascending: false }).limit(200),
       ]);
-      setTransactions((txRes.data ?? []) as Transaction[]);
+
+      let txData = (txRes.data ?? []) as Transaction[];
+      if (txData.length === 0) {
+        const { data: fallbackTx } = await supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(200);
+        txData = (fallbackTx ?? []) as Transaction[];
+      }
+
+      setTransactions(txData.map((d) => ({
+        ...d,
+        motif: (d as Record<string, unknown>).libelle as string ?? (d as Record<string, unknown>).motif as string ?? "",
+      })) as Transaction[]);
       setCorrespondances((corrRes.data ?? []) as Courrier[]);
       setSaisies((saisiesRes.data ?? []) as Saisie[]);
       setRapports((rapportsRes.data ?? []) as Rapport[]);
@@ -655,6 +667,7 @@ function RegionPageContent() {
                         <tr>
                           <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
                           <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+                          <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Brigade</th>
                           <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Motif</th>
                           <th className="text-right px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Montant</th>
                         </tr>
@@ -669,6 +682,9 @@ function RegionPageContent() {
                               <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${t.type === "recette" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
                                 {t.type === "recette" ? "Recette" : "Dépense"}
                               </span>
+                            </td>
+                            <td className="px-5 py-3 text-xs font-medium text-[#4A5C2F]">
+                              {BRIGADES.find((b) => b.id === t.brigade_id)?.nom || t.brigade_id || "—"}
                             </td>
                             <td className="px-5 py-3 text-gray-700 text-sm">{t.motif}</td>
                             <td className={`px-5 py-3 text-right font-semibold text-sm ${t.type === "recette" ? "text-green-600" : "text-red-600"}`}>
